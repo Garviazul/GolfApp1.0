@@ -1,4 +1,7 @@
 
+-- Needed for random UUID and token generation.
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
+
 -- Create profiles table
 CREATE TABLE public.profiles (
   id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -31,10 +34,10 @@ CREATE TRIGGER on_auth_user_created
 
 -- Invites table
 CREATE TABLE public.invites (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  id uuid PRIMARY KEY DEFAULT extensions.gen_random_uuid(),
   email text NOT NULL,
   invited_by uuid REFERENCES public.profiles(id) NOT NULL,
-  token text UNIQUE NOT NULL DEFAULT encode(gen_random_bytes(32), 'hex'),
+  token text UNIQUE NOT NULL DEFAULT encode(extensions.gen_random_bytes(32), 'hex'),
   status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'revoked')),
   created_at timestamptz NOT NULL DEFAULT now(),
   accepted_at timestamptz
@@ -47,7 +50,7 @@ CREATE POLICY "Users can update own invites" ON public.invites FOR UPDATE USING 
 
 -- Courses table
 CREATE TABLE public.courses (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  id uuid PRIMARY KEY DEFAULT extensions.gen_random_uuid(),
   owner_id uuid REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
   name text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
@@ -61,7 +64,7 @@ CREATE POLICY "Users can delete own courses" ON public.courses FOR DELETE USING 
 
 -- Course holes table
 CREATE TABLE public.course_holes (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  id uuid PRIMARY KEY DEFAULT extensions.gen_random_uuid(),
   course_id uuid REFERENCES public.courses(id) ON DELETE CASCADE NOT NULL,
   hole_number int NOT NULL CHECK (hole_number BETWEEN 1 AND 18),
   par int NOT NULL CHECK (par BETWEEN 3 AND 5),
@@ -81,7 +84,7 @@ CREATE POLICY "Users can delete holes of own courses" ON public.course_holes FOR
 
 -- Rounds table
 CREATE TABLE public.rounds (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  id uuid PRIMARY KEY DEFAULT extensions.gen_random_uuid(),
   owner_id uuid REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
   course_id uuid REFERENCES public.courses(id) NOT NULL,
   played_at date NOT NULL DEFAULT CURRENT_DATE,
@@ -97,7 +100,7 @@ CREATE POLICY "Users can delete own rounds" ON public.rounds FOR DELETE USING (a
 
 -- Round holes table (L2 tracking)
 CREATE TABLE public.round_holes (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  id uuid PRIMARY KEY DEFAULT extensions.gen_random_uuid(),
   round_id uuid REFERENCES public.rounds(id) ON DELETE CASCADE NOT NULL,
   hole_number int NOT NULL CHECK (hole_number BETWEEN 1 AND 18),
   hole_par int NOT NULL CHECK (hole_par BETWEEN 3 AND 5),

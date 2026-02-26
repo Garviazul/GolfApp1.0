@@ -22,13 +22,15 @@ const RoundDetail = () => {
   const navigate = useNavigate();
   const [courseName, setCourseName] = useState("");
   const [playedAt, setPlayedAt] = useState("");
+  const [status, setStatus] = useState<"in_progress" | "finished">("in_progress");
   const [holes, setHoles] = useState<RoundHole[]>([]);
 
   useEffect(() => {
     if (!roundId) return;
-    supabase.from("rounds").select("played_at, courses(name)").eq("id", roundId).single().then(({ data }) => {
+    supabase.from("rounds").select("played_at, status, courses(name)").eq("id", roundId).single().then(({ data }) => {
       if (data) {
         setPlayedAt(data.played_at);
+        setStatus((data.status as "in_progress" | "finished") ?? "in_progress");
         setCourseName((data.courses as any)?.name ?? "");
       }
     });
@@ -38,9 +40,12 @@ const RoundDetail = () => {
       });
   }, [roundId]);
 
-  const totalScore = holes.reduce((s, h) => s + (h.score ?? 0), 0);
+  const holesPlayed = holes.filter((h) => h.score != null);
+  const holesPlayedCount = holesPlayed.length;
+  const totalScore = holesPlayed.reduce((s, h) => s + (h.score ?? 0), 0);
+  const totalParPlayed = holesPlayed.reduce((s, h) => s + h.hole_par, 0);
   const totalPar = holes.reduce((s, h) => s + h.hole_par, 0);
-  const diff = totalScore - totalPar;
+  const diff = totalScore - totalParPlayed;
 
   const handleDelete = async () => {
     if (!confirm("¿Eliminar esta ronda?")) return;
@@ -59,10 +64,19 @@ const RoundDetail = () => {
           <div className="flex-1">
             <h1 className="text-lg font-bold">{courseName}</h1>
             <p className="text-xs text-muted-foreground">{playedAt && new Date(playedAt).toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })}</p>
+            <p className="text-xs text-muted-foreground">Hoyos registrados: {holesPlayedCount}</p>
           </div>
-          <Button variant="ghost" size="icon" onClick={() => navigate(`/rondas/${roundId}/hoyo/1`)}>
-            <Edit className="h-4 w-4" />
-          </Button>
+          <span className={cn(
+            "rounded-full px-2 py-1 text-[10px] font-medium",
+            status === "finished" ? "bg-success/15 text-success" : "bg-warning/15 text-warning"
+          )}>
+            {status === "finished" ? "Finalizada" : "En progreso"}
+          </span>
+          {status !== "finished" && (
+            <Button variant="ghost" size="icon" onClick={() => navigate(`/rondas/${roundId}/hoyo/1`)}>
+              <Edit className="h-4 w-4" />
+            </Button>
+          )}
           <Button variant="ghost" size="icon" onClick={handleDelete}>
             <Trash2 className="h-4 w-4 text-destructive" />
           </Button>
@@ -75,8 +89,14 @@ const RoundDetail = () => {
             <p className="text-xs opacity-70">Total</p>
           </div>
           <div className="text-center">
-            <p className="text-3xl font-bold">{diff > 0 ? `+${diff}` : diff || "E"}</p>
+            <p className="text-3xl font-bold">
+              {holesPlayedCount === 0 ? "–" : diff > 0 ? `+${diff}` : diff || "E"}
+            </p>
             <p className="text-xs opacity-70">vs Par</p>
+          </div>
+          <div className="text-center">
+            <p className="text-3xl font-bold">{totalPar || "–"}</p>
+            <p className="text-xs opacity-70">Par campo</p>
           </div>
         </div>
 
@@ -90,8 +110,11 @@ const RoundDetail = () => {
             return (
               <div
                 key={h.hole_number}
-                onClick={() => navigate(`/rondas/${roundId}/hoyo/${h.hole_number}`)}
-                className="grid cursor-pointer grid-cols-[2.5rem_1fr_2.5rem_2.5rem_2.5rem] items-center gap-0 border-b border-border/50 px-2 py-2 text-sm last:border-0 tap-highlight-none hover:bg-secondary"
+                onClick={() => status === "in_progress" && navigate(`/rondas/${roundId}/hoyo/${h.hole_number}`)}
+                className={cn(
+                  "grid grid-cols-[2.5rem_1fr_2.5rem_2.5rem_2.5rem] items-center gap-0 border-b border-border/50 px-2 py-2 text-sm last:border-0 tap-highlight-none",
+                  status === "in_progress" ? "cursor-pointer hover:bg-secondary" : "cursor-default"
+                )}
               >
                 <span className="font-bold text-primary">{h.hole_number}</span>
                 <span className="text-[10px]">

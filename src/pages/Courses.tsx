@@ -12,6 +12,7 @@ interface Course {
   id: string;
   name: string;
   created_at: string;
+  total_par: number;
 }
 
 const Courses = () => {
@@ -24,8 +25,36 @@ const Courses = () => {
 
   const fetchCourses = async () => {
     if (!user) return;
-    const { data } = await supabase.from("courses").select("*").eq("owner_id", user.id).order("created_at", { ascending: false });
-    setCourses(data ?? []);
+    const { data: rawCourses } = await supabase
+      .from("courses")
+      .select("id, name, created_at")
+      .eq("owner_id", user.id)
+      .order("created_at", { ascending: false });
+
+    const baseCourses = (rawCourses ?? []).map((course) => ({ ...course, total_par: 0 }));
+    if (baseCourses.length === 0) {
+      setCourses([]);
+      setLoading(false);
+      return;
+    }
+
+    const courseIds = baseCourses.map((course) => course.id);
+    const { data: holes } = await supabase
+      .from("course_holes")
+      .select("course_id, par")
+      .in("course_id", courseIds);
+
+    const parByCourse = (holes ?? []).reduce<Record<string, number>>((acc, hole) => {
+      acc[hole.course_id] = (acc[hole.course_id] ?? 0) + hole.par;
+      return acc;
+    }, {});
+
+    setCourses(
+      baseCourses.map((course) => ({
+        ...course,
+        total_par: parByCourse[course.id] ?? 0,
+      }))
+    );
     setLoading(false);
   };
 
@@ -84,7 +113,11 @@ const Courses = () => {
               >
                 <div>
                   <p className="font-semibold">{c.name}</p>
-                  <p className="text-xs text-muted-foreground">{new Date(c.created_at).toLocaleDateString("es-ES")}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {c.total_par > 0 ? `Par ${c.total_par}` : "Sin hoyos"}
+                    {" · "}
+                    {new Date(c.created_at).toLocaleDateString("es-ES")}
+                  </p>
                 </div>
                 <ChevronRight className="h-5 w-5 text-muted-foreground" />
               </button>

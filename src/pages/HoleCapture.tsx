@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, ArrowRight, Check, ChevronLeft } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -29,9 +29,9 @@ interface HoleData {
 }
 
 const MENTAL = [
-  { value: "perfecto", label: "Perfecto", emoji: "🟢" },
-  { value: "dude_en_1", label: "Dudé en 1", emoji: "🟡" },
-  { value: "perdi_el_foco", label: "Perdí foco", emoji: "🔴" },
+  { value: "perfecto", label: "Rutina perfecta", emoji: "🟢" },
+  { value: "dude_en_1", label: "Dudé en 1 golpe", emoji: "🟡" },
+  { value: "perdi_el_foco", label: "Perdí el enfoque", emoji: "🔴" },
 ];
 
 const TEE_CLUBS = [
@@ -56,7 +56,34 @@ const HoleCapture = () => {
   const currentHole = parseInt(holeNum ?? "1");
   const [hole, setHole] = useState<HoleData | null>(null);
   const [saving, setSaving] = useState(false);
+  const [finishingRound, setFinishingRound] = useState(false);
   const [totalHoles, setTotalHoles] = useState(18);
+  const [registeredHoles, setRegisteredHoles] = useState(0);
+
+  const fetchRoundMeta = useCallback(async () => {
+    if (!roundId) return;
+
+    const [{ data: holes }, { data: round }] = await Promise.all([
+      supabase.from("round_holes").select("hole_number").eq("round_id", roundId),
+      supabase.from("rounds").select("status").eq("id", roundId).single(),
+    ]);
+
+    if (holes) setTotalHoles(holes.length);
+    if (round?.status === "finished") {
+      toast.info("Esta ronda ya está cerrada.");
+      navigate(`/rondas/${roundId}`, { replace: true });
+    }
+  }, [navigate, roundId]);
+
+  const fetchRegisteredHoles = useCallback(async () => {
+    if (!roundId) return;
+    const { count } = await supabase
+      .from("round_holes")
+      .select("id", { count: "exact", head: true })
+      .eq("round_id", roundId)
+      .not("score", "is", null);
+    setRegisteredHoles(count ?? 0);
+  }, [roundId]);
 
   const fetchHole = useCallback(async () => {
     if (!roundId) return;
@@ -71,12 +98,9 @@ const HoleCapture = () => {
 
   useEffect(() => {
     fetchHole();
-    if (roundId) {
-      supabase.from("round_holes").select("hole_number").eq("round_id", roundId).then(({ data }) => {
-        if (data) setTotalHoles(data.length);
-      });
-    }
-  }, [fetchHole, roundId]);
+    fetchRoundMeta();
+    fetchRegisteredHoles();
+  }, [fetchHole, fetchRoundMeta, fetchRegisteredHoles]);
 
   const update = async (fields: Partial<HoleData>) => {
     if (!hole) return;
@@ -96,17 +120,38 @@ const HoleCapture = () => {
 
     setSaving(true);
     const { id, ...rest } = updated;
-    await supabase.from("round_holes").update(rest).eq("id", id);
+    const { error } = await supabase.from("round_holes").update(rest).eq("id", id);
     setSaving(false);
+    if (error) {
+      toast.error("No se pudo guardar el hoyo");
+      return;
+    }
+    await fetchRegisteredHoles();
   };
 
   const goToHole = (n: number) => {
     navigate(`/rondas/${roundId}/hoyo/${n}`, { replace: true });
   };
 
-  const finishRound = () => {
-    toast.success("Ronda completada");
-    navigate(`/rondas/${roundId}`);
+  const finishRound = async () => {
+    if (!roundId) return;
+    const confirmed = window.confirm("¿Seguro que quieres terminar y cerrar esta ronda?");
+    if (!confirmed) return;
+
+    setFinishingRound(true);
+    const { error } = await supabase
+      .from("rounds")
+      .update({ status: "finished", finished_at: new Date().toISOString() })
+      .eq("id", roundId);
+    setFinishingRound(false);
+
+    if (error) {
+      toast.error("No se pudo cerrar la ronda");
+      return;
+    }
+
+    toast.success("Ronda cerrada");
+    navigate(`/rondas/${roundId}`, { replace: true });
   };
 
   if (!hole) return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Cargando...</div>;
@@ -122,10 +167,21 @@ const HoleCapture = () => {
           <div className="text-center">
             <p className="text-lg font-bold">Hoyo {currentHole}</p>
             <p className="text-xs text-muted-foreground">Par {hole.hole_par} · {hole.hole_meters_total}m</p>
+            <p className="text-xs text-muted-foreground">Hoyos registrados: {registeredHoles}</p>
           </div>
-          <span className={cn("text-xs font-medium transition-opacity", saving ? "text-muted-foreground opacity-100" : "opacity-0")}>
-            Guardando...
-          </span>
+          <div className="flex flex-col items-end gap-1">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={finishRound}
+              disabled={finishingRound}
+            >
+              {finishingRound ? "Cerrando..." : "Terminar ronda"}
+            </Button>
+            <span className={cn("text-xs font-medium transition-opacity", saving ? "text-muted-foreground opacity-100" : "opacity-0")}>
+              Guardando...
+            </span>
+          </div>
         </div>
         {/* Hole dots */}
         <div className="flex justify-center gap-1 pb-2 px-4">
@@ -171,7 +227,7 @@ const HoleCapture = () => {
         </Section>
 
         {/* Mental */}
-        <Section title="Compromiso Mental">
+        <Section title="Rutina y enfoque">
           <div className="flex gap-2">
             {MENTAL.map((m) => (
               <Button
@@ -242,10 +298,22 @@ const HoleCapture = () => {
         <Section title="Green en Regulación">
           <div className="space-y-2">
             <div className="flex gap-2">
-              <Button variant="chip-success" size="chip-lg" data-active={hole.gir === true} onClick={() => update({ gir: true })} className="flex-1">
+              <Button
+                variant="chip-success"
+                size="chip-lg"
+                data-active={hole.gir === true}
+                onClick={() => update({ gir: true, scrambling_attempt: false, scrambling_success: null })}
+                className="flex-1"
+              >
                 ✅ GIR
               </Button>
-              <Button variant="chip-destructive" size="chip-lg" data-active={hole.gir === false} onClick={() => update({ gir: false, gir_proximity_bucket: null })} className="flex-1">
+              <Button
+                variant="chip-destructive"
+                size="chip-lg"
+                data-active={hole.gir === false}
+                onClick={() => update({ gir: false, gir_proximity_bucket: null })}
+                className="flex-1"
+              >
                 ❌ No GIR
               </Button>
             </div>
@@ -263,15 +331,26 @@ const HoleCapture = () => {
             )}
             {hole.gir === false && (
               <div className="animate-fade-in space-y-2">
+                <p className="text-xs text-muted-foreground">Salvar el par</p>
                 <div className="flex gap-2">
-                  <Button variant="chip" size="chip-lg" data-active={hole.scrambling_attempt} onClick={() => update({ scrambling_attempt: !hole.scrambling_attempt, scrambling_success: null })} className="flex-1">
-                    Intento Scrambling
+                  <Button
+                    variant="chip-success"
+                    size="chip-lg"
+                    data-active={hole.scrambling_attempt && hole.scrambling_success === true}
+                    onClick={() => update({ scrambling_attempt: true, scrambling_success: true })}
+                    className="flex-1"
+                  >
+                    Sí
                   </Button>
-                  {hole.scrambling_attempt && (
-                    <Button variant="chip-success" size="chip-lg" data-active={hole.scrambling_success === true} onClick={() => update({ scrambling_success: hole.scrambling_success === true ? false : true })} className="flex-1">
-                      {hole.scrambling_success ? "✅ Salvado" : "Salvado?"}
-                    </Button>
-                  )}
+                  <Button
+                    variant="chip-destructive"
+                    size="chip-lg"
+                    data-active={hole.scrambling_attempt && hole.scrambling_success === false}
+                    onClick={() => update({ scrambling_attempt: true, scrambling_success: false })}
+                    className="flex-1"
+                  >
+                    No
+                  </Button>
                 </div>
               </div>
             )}
@@ -345,8 +424,8 @@ const HoleCapture = () => {
               Siguiente <ArrowRight className="ml-1 h-4 w-4" />
             </Button>
           ) : (
-            <Button size="lg" onClick={finishRound} className="bg-success hover:bg-success/90 text-success-foreground">
-              <Check className="mr-1 h-4 w-4" /> Terminar
+            <Button size="lg" onClick={() => navigate(`/rondas/${roundId}`)}>
+              Ver resumen
             </Button>
           )}
         </div>

@@ -12,16 +12,42 @@ import { toast } from "sonner";
 const NewRound = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [courses, setCourses] = useState<{ id: string; name: string }[]>([]);
+  const [courses, setCourses] = useState<{ id: string; name: string; totalPar: number }[]>([]);
   const [selectedCourse, setSelectedCourse] = useState<string>("");
   const [playedAt, setPlayedAt] = useState(new Date().toISOString().split("T")[0]);
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     if (!user) return;
-    supabase.from("courses").select("id, name").eq("owner_id", user.id).order("name").then(({ data }) => {
-      setCourses(data ?? []);
-    });
+
+    const fetchCourses = async () => {
+      const { data: rawCourses } = await supabase
+        .from("courses")
+        .select("id, name")
+        .eq("owner_id", user.id)
+        .order("name");
+
+      const baseCourses = (rawCourses ?? []).map((course) => ({ ...course, totalPar: 0 }));
+      if (baseCourses.length === 0) {
+        setCourses([]);
+        return;
+      }
+
+      const courseIds = baseCourses.map((course) => course.id);
+      const { data: holes } = await supabase
+        .from("course_holes")
+        .select("course_id, par")
+        .in("course_id", courseIds);
+
+      const parByCourse = (holes ?? []).reduce<Record<string, number>>((acc, hole) => {
+        acc[hole.course_id] = (acc[hole.course_id] ?? 0) + hole.par;
+        return acc;
+      }, {});
+
+      setCourses(baseCourses.map((course) => ({ ...course, totalPar: parByCourse[course.id] ?? 0 })));
+    };
+
+    fetchCourses();
   }, [user]);
 
   const handleCreate = async () => {
@@ -43,7 +69,12 @@ const NewRound = () => {
 
     const { data: round, error } = await supabase
       .from("rounds")
-      .insert({ owner_id: user.id, course_id: selectedCourse, played_at: playedAt })
+      .insert({
+        owner_id: user.id,
+        course_id: selectedCourse,
+        played_at: playedAt,
+        status: "in_progress",
+      })
       .select()
       .single();
 
@@ -97,7 +128,12 @@ const NewRound = () => {
                     onClick={() => setSelectedCourse(c.id)}
                     className="justify-start"
                   >
-                    {c.name}
+                    <div className="flex w-full items-center justify-between gap-3">
+                      <span>{c.name}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {c.totalPar > 0 ? `Par ${c.totalPar}` : "Sin hoyos"}
+                      </span>
+                    </div>
                   </Button>
                 ))}
               </div>
@@ -115,7 +151,7 @@ const NewRound = () => {
             className="w-full"
             size="xl"
           >
-            <Play className="mr-2 h-5 w-5" /> Comenzar Ronda
+            <Play className="mr-2 h-5 w-5" /> Iniciar captura
           </Button>
         </div>
       </div>

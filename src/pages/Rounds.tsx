@@ -5,11 +5,14 @@ import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Plus, ChevronRight, ClipboardList } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { cn } from "@/lib/utils";
 
 interface Round {
   id: string;
   played_at: string;
   notes: string | null;
+  status: "in_progress" | "finished";
+  finished_at: string | null;
   courses: { name: string } | null;
 }
 
@@ -17,19 +20,43 @@ const Rounds = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [rounds, setRounds] = useState<Round[]>([]);
+  const [holesPlayedByRound, setHolesPlayedByRound] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!user) return;
-    supabase
-      .from("rounds")
-      .select("id, played_at, notes, courses(name)")
-      .eq("owner_id", user.id)
-      .order("played_at", { ascending: false })
-      .then(({ data }) => {
-        setRounds((data as unknown as Round[]) ?? []);
+    const fetchRounds = async () => {
+      const { data: roundsData } = await supabase
+        .from("rounds")
+        .select("id, played_at, notes, status, finished_at, courses(name)")
+        .eq("owner_id", user.id)
+        .order("played_at", { ascending: false });
+
+      const safeRounds = (roundsData as unknown as Round[]) ?? [];
+      setRounds(safeRounds);
+
+      if (safeRounds.length === 0) {
+        setHolesPlayedByRound({});
         setLoading(false);
-      });
+        return;
+      }
+
+      const roundIds = safeRounds.map((round) => round.id);
+      const { data: roundHoles } = await supabase
+        .from("round_holes")
+        .select("round_id, score")
+        .in("round_id", roundIds);
+
+      const scoredCountByRound = (roundHoles ?? []).reduce<Record<string, number>>((acc, hole) => {
+        if (hole.score != null) acc[hole.round_id] = (acc[hole.round_id] ?? 0) + 1;
+        return acc;
+      }, {});
+
+      setHolesPlayedByRound(scoredCountByRound);
+      setLoading(false);
+    };
+
+    fetchRounds();
   }, [user]);
 
   return (
@@ -67,9 +94,21 @@ const Rounds = () => {
                   <p className="font-semibold">{r.courses?.name ?? "Campo"}</p>
                   <p className="text-xs text-muted-foreground">
                     {new Date(r.played_at).toLocaleDateString("es-ES", { weekday: "short", day: "numeric", month: "short" })}
+                    {" · "}
+                    {holesPlayedByRound[r.id] ?? 0} hoyos registrados
                   </p>
                 </div>
-                <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                <div className="flex items-center gap-2">
+                  <span className={cn(
+                    "rounded-full px-2 py-1 text-[10px] font-medium",
+                    r.status === "finished"
+                      ? "bg-success/15 text-success"
+                      : "bg-warning/15 text-warning"
+                  )}>
+                    {r.status === "finished" ? "Finalizada" : "En progreso"}
+                  </span>
+                  <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                </div>
               </button>
             ))}
           </div>

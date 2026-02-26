@@ -215,26 +215,32 @@ export type Database = {
         Row: {
           course_id: string
           created_at: string
+          finished_at: string | null
           id: string
           notes: string | null
           owner_id: string
           played_at: string
+          status: "in_progress" | "finished"
         }
         Insert: {
           course_id: string
           created_at?: string
+          finished_at?: string | null
           id?: string
           notes?: string | null
           owner_id: string
           played_at?: string
+          status?: "in_progress" | "finished"
         }
         Update: {
           course_id?: string
           created_at?: string
+          finished_at?: string | null
           id?: string
           notes?: string | null
           owner_id?: string
           played_at?: string
+          status?: "in_progress" | "finished"
         }
         Relationships: [
           {

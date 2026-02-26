@@ -146,7 +146,7 @@ const Dashboard = () => {
           icon={<Brain className="h-5 w-5 text-primary" />}
           title="Mental Score"
           value={`${mentalPct}%`}
-          subtitle="Compromiso perfecto"
+          subtitle="Rutina perfecta"
         >
           <div className="mt-2 flex gap-3 text-xs">
             <span>🟢 {mental.perfecto}</span>
