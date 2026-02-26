@@ -3,8 +3,13 @@ import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, ArrowRight, ChevronLeft } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { FfIcon } from "@/components/FfIcon";
+import { MetricInfoDialog, type MetricInfoContent } from "@/components/MetricInfoDialog";
+import { calculateTiger5 } from "@/lib/tiger5";
+import { calculateStrokesGainedProxy } from "@/lib/strokesGained";
 
 interface HoleData {
   id: string;
@@ -16,6 +21,7 @@ interface HoleData {
   tee_club: string | null;
   tee_result: string | null;
   approach_zone: string | null;
+  approach_lie: string | null;
   approach_target: string | null;
   approach_error_side: string | null;
   gir: boolean | null;
@@ -26,12 +32,19 @@ interface HoleData {
   scrambling_attempt: boolean;
   scrambling_success: boolean | null;
   penalties: number;
+  sg_off_tee: number | null;
+  sg_approach: number | null;
+  sg_short_game: number | null;
+  sg_putting: number | null;
+  sg_total: number | null;
+  sg_confidence: "low" | "medium" | "high";
+  sg_model_version: string;
 }
 
 const MENTAL = [
-  { value: "perfecto", label: "Rutina perfecta", emoji: "🟢" },
-  { value: "dude_en_1", label: "Dudé en 1 golpe", emoji: "🟡" },
-  { value: "perdi_el_foco", label: "Perdí el enfoque", emoji: "🔴" },
+  { value: "perfecto", label: "Rutina perfecta", icon: "cloud-check", iconClass: "text-success" },
+  { value: "dude_en_1", label: "Dudé en 1 golpe", icon: "triangle-warning", iconClass: "text-warning" },
+  { value: "perdi_el_foco", label: "Perdí el enfoque", icon: "cross-circle", iconClass: "text-destructive" },
 ];
 
 const TEE_CLUBS = [
@@ -48,7 +61,39 @@ const TEE_RESULTS = [
 ];
 
 const APPROACH_ZONES = ["<60", "60-90", "90-135", "135-180", ">180"];
+const APPROACH_LIES = [
+  { value: "fairway", label: "Fairway" },
+  { value: "rough", label: "Rough" },
+  { value: "bunker", label: "Bunker" },
+  { value: "recovery", label: "Recovery" },
+];
 const PROXIMITY_BUCKETS = ["<3m", "3-5m", "5-10m", ">10m"];
+
+const TIGER5_INFO: MetricInfoContent = {
+  title: "Tiger 5",
+  what: "Los 5 errores que más castigan el resultado. Se registran automáticamente por hoyo.",
+  calculation:
+    "Se activa cuando hay: bogey en par 5, doble bogey o peor, 3 putts, bogey con approach de wedge o penalidad.",
+  target: "Reducirlos de forma sostenida durante bloques de 10-20 rondas.",
+  improve: [
+    "Evita dobles con decisiones conservadoras tras un golpe malo.",
+    "Elige centro de green cuando la bandera implique riesgo alto.",
+    "Prioriza control de distancia para bajar 3 putts.",
+  ],
+};
+
+const MENTAL_INFO: MetricInfoContent = {
+  title: "Mental Score",
+  what: "Mide tu compromiso con la rutina mental en cada hoyo.",
+  calculation:
+    "Cada hoyo se etiqueta como rutina perfecta, duda puntual o pérdida de foco. El dashboard usa estos registros para el porcentaje.",
+  target: "Mantener la mayoría de hoyos en rutina perfecta.",
+  improve: [
+    "Mismo patrón pre-golpe para todos los palos.",
+    "Si dudas, reinicia visualización y respiración.",
+    "Evalúa cada 3 hoyos para corregir durante la ronda.",
+  ],
+};
 
 const HoleCapture = () => {
   const { roundId, holeNum } = useParams<{ roundId: string; holeNum: string }>();
@@ -116,10 +161,21 @@ const HoleCapture = () => {
     }
 
     const updated = { ...hole, ...fields, ...extra };
-    setHole(updated);
+    const sg = calculateStrokesGainedProxy(updated);
+    const updatedWithSg: HoleData = {
+      ...updated,
+      sg_off_tee: sg.offTee,
+      sg_approach: sg.approach,
+      sg_short_game: sg.shortGame,
+      sg_putting: sg.putting,
+      sg_total: sg.total,
+      sg_confidence: sg.confidence,
+      sg_model_version: "v1_bucket_proxy",
+    };
+    setHole(updatedWithSg);
 
     setSaving(true);
-    const { id, ...rest } = updated;
+    const { id, ...rest } = updatedWithSg;
     const { error } = await supabase.from("round_holes").update(rest).eq("id", id);
     setSaving(false);
     if (error) {
@@ -156,12 +212,53 @@ const HoleCapture = () => {
 
   if (!hole) return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Cargando...</div>;
 
+  const checklist = [
+    { label: "Score", done: hole.score != null },
+    { label: "Mental", done: hole.mental_commitment != null },
+    { label: "Salida", done: hole.tee_result != null },
+    {
+      label: "Approach",
+      done: hole.approach_zone != null && hole.approach_lie != null && hole.approach_target != null && hole.approach_error_side != null,
+    },
+    { label: "GIR/No GIR", done: hole.gir != null },
+    { label: "Putts", done: hole.putts != null },
+    { label: "Distancia 1er putt", done: hole.first_putt_bucket != null },
+  ];
+  const checklistDone = checklist.filter((item) => item.done).length;
+  const checklistPct = Math.round((checklistDone / checklist.length) * 100);
+  const missingChecklist = checklist.filter((item) => !item.done).map((item) => item.label);
+
+  const tiger5 = calculateTiger5({
+    hole_par: hole.hole_par,
+    score: hole.score,
+    putts: hole.putts,
+    approach_zone: hole.approach_zone,
+    penalties: hole.penalties,
+    tee_result: hole.tee_result,
+  });
+  const tiger5Flags = [
+    tiger5.bogeyPar5 ? "Bogey en par 5" : null,
+    tiger5.doublePlus ? "Doble bogey o peor" : null,
+    tiger5.threePutt ? "3 putts" : null,
+    tiger5.bogeyWithWedge ? "Bogey con wedge" : null,
+    tiger5.penalty ? "Penalidad" : null,
+  ].filter((flag): flag is string => Boolean(flag));
+
+  const sgLive = calculateStrokesGainedProxy(hole);
+  const sgOffTee = hole.sg_off_tee ?? sgLive.offTee;
+  const sgApproach = hole.sg_approach ?? sgLive.approach;
+  const sgShortGame = hole.sg_short_game ?? sgLive.shortGame;
+  const sgPutting = hole.sg_putting ?? sgLive.putting;
+  const sgTotal = hole.sg_total ?? sgLive.total;
+  const sgConfidence = hole.sg_confidence ?? sgLive.confidence;
+  const formatSg = (value: number | null) => (value == null ? "–" : `${value > 0 ? "+" : ""}${value.toFixed(2)}`);
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
       <div className="sticky top-0 z-40 border-b border-border bg-card/95 backdrop-blur-md">
         <div className="mx-auto flex max-w-lg items-center justify-between px-4 py-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate(`/rondas`)}>
+          <Button variant="ghost" size="icon" onClick={() => navigate(`/rondas/${roundId}`)}>
             <ChevronLeft className="h-5 w-5" />
           </Button>
           <div className="text-center">
@@ -169,19 +266,9 @@ const HoleCapture = () => {
             <p className="text-xs text-muted-foreground">Par {hole.hole_par} · {hole.hole_meters_total}m</p>
             <p className="text-xs text-muted-foreground">Hoyos registrados: {registeredHoles}</p>
           </div>
-          <div className="flex flex-col items-end gap-1">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={finishRound}
-              disabled={finishingRound}
-            >
-              {finishingRound ? "Cerrando..." : "Terminar ronda"}
-            </Button>
-            <span className={cn("text-xs font-medium transition-opacity", saving ? "text-muted-foreground opacity-100" : "opacity-0")}>
-              Guardando...
-            </span>
-          </div>
+          <span className={cn("text-xs font-medium transition-opacity", saving ? "text-muted-foreground opacity-100" : "opacity-0")}>
+            Guardando...
+          </span>
         </div>
         {/* Hole dots */}
         <div className="flex justify-center gap-1 pb-2 px-4">
@@ -200,8 +287,21 @@ const HoleCapture = () => {
 
       {/* Content */}
       <div className="mx-auto max-w-lg space-y-5 px-4 py-4 pb-24">
+        <div className="rounded-xl border border-border bg-card p-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold">Calidad de datos del hoyo</p>
+            <span className="text-xs font-semibold text-primary">{checklistPct}%</span>
+          </div>
+          <Progress value={checklistPct} className="mt-2 h-2" />
+          <p className="mt-2 text-xs text-muted-foreground">
+            {missingChecklist.length === 0
+              ? "Registro completo. Este hoyo aporta al 100% en tus métricas."
+              : `Faltan: ${missingChecklist.join(", ")}.`}
+          </p>
+        </div>
+
         {/* Score */}
-        <Section title="Score">
+        <Section title="Score" info={TIGER5_INFO}>
           <div className="flex flex-wrap gap-2">
             {Array.from({ length: 8 }, (_, i) => i + 1).map((s) => {
               const diff = s - hole.hole_par;
@@ -224,10 +324,19 @@ const HoleCapture = () => {
               );
             })}
           </div>
+
+          {hole.score != null && (
+            <div className="rounded-lg border border-border bg-muted/50 p-2 text-xs">
+              <p className="font-medium">Impacto Tiger 5 en este hoyo: {tiger5.count}</p>
+              <p className="mt-1 text-muted-foreground">
+                {tiger5Flags.length > 0 ? tiger5Flags.join(" · ") : "Sin errores Tiger 5 en este hoyo."}
+              </p>
+            </div>
+          )}
         </Section>
 
         {/* Mental */}
-        <Section title="Rutina y enfoque">
+        <Section title="Rutina y enfoque" info={MENTAL_INFO}>
           <div className="flex gap-2">
             {MENTAL.map((m) => (
               <Button
@@ -238,7 +347,8 @@ const HoleCapture = () => {
                 onClick={() => update({ mental_commitment: m.value })}
                 className="flex-1"
               >
-                {m.emoji} {m.label}
+                <FfIcon name={m.icon} className={cn("text-sm", m.iconClass)} />
+                <span>{m.label}</span>
               </Button>
             ))}
           </div>
@@ -275,12 +385,26 @@ const HoleCapture = () => {
                 </Button>
               ))}
             </div>
+            <p className="text-xs text-muted-foreground">Lie de approach</p>
+            <div className="flex flex-wrap gap-2">
+              {APPROACH_LIES.map((lie) => (
+                <Button
+                  key={lie.value}
+                  variant="chip"
+                  size="chip-lg"
+                  data-active={hole.approach_lie === lie.value}
+                  onClick={() => update({ approach_lie: lie.value })}
+                >
+                  {lie.label}
+                </Button>
+              ))}
+            </div>
             <div className="flex gap-2">
               <Button variant="chip" size="chip-lg" data-active={hole.approach_target === "centro_green"} onClick={() => update({ approach_target: "centro_green" })} className="flex-1">
-                🎯 Centro
+                <FfIcon name="bullseye-pointer" className="text-sm" /> Centro
               </Button>
               <Button variant="chip" size="chip-lg" data-active={hole.approach_target === "bandera"} onClick={() => update({ approach_target: "bandera" })} className="flex-1">
-                🏁 Bandera
+                <FfIcon name="flag-alt" className="text-sm" /> Bandera
               </Button>
             </div>
             <div className="flex gap-2">
@@ -305,7 +429,7 @@ const HoleCapture = () => {
                 onClick={() => update({ gir: true, scrambling_attempt: false, scrambling_success: null })}
                 className="flex-1"
               >
-                ✅ GIR
+                <FfIcon name="check-circle" className="text-sm" /> GIR
               </Button>
               <Button
                 variant="chip-destructive"
@@ -314,7 +438,7 @@ const HoleCapture = () => {
                 onClick={() => update({ gir: false, gir_proximity_bucket: null })}
                 className="flex-1"
               >
-                ❌ No GIR
+                <FfIcon name="cross-circle" className="text-sm" /> No GIR
               </Button>
             </div>
             {hole.gir && (
@@ -406,26 +530,64 @@ const HoleCapture = () => {
             ))}
           </div>
         </Section>
+
+        <Section title="Strokes Gained (Beta Elite)">
+          <div className="rounded-xl border border-border bg-card p-3">
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <SgItem label="SG Tee" value={formatSg(sgOffTee)} />
+              <SgItem label="SG Approach" value={formatSg(sgApproach)} />
+              <SgItem label="SG Short Game" value={formatSg(sgShortGame)} />
+              <SgItem label="SG Putting" value={formatSg(sgPutting)} />
+            </div>
+            <div className="mt-3 flex items-center justify-between border-t border-border pt-2">
+              <p className="text-sm font-semibold">SG Total</p>
+              <p
+                className={cn(
+                  "text-sm font-semibold",
+                  sgTotal == null ? "text-foreground" : sgTotal < 0 ? "text-warning" : "text-success",
+                )}
+              >
+                {formatSg(sgTotal)}
+              </p>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Confianza del cálculo:{" "}
+              <span className="font-semibold">
+                {sgConfidence === "high" ? "Alta" : sgConfidence === "medium" ? "Media" : "Baja"}
+              </span>
+            </p>
+          </div>
+        </Section>
       </div>
 
       {/* Bottom Nav */}
       <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card/95 backdrop-blur-md">
-        <div className="mx-auto flex max-w-lg items-center justify-between px-4 py-3">
+        <div className="mx-auto grid max-w-lg grid-cols-3 gap-2 px-4 py-3">
           <Button
             variant="outline"
             size="lg"
             disabled={currentHole <= 1}
             onClick={() => goToHole(currentHole - 1)}
+            className="w-full"
           >
-            <ArrowLeft className="mr-1 h-4 w-4" /> Anterior
+            <ArrowLeft className="mr-1 h-4 w-4" /> Ant.
+          </Button>
+          <Button
+            size="lg"
+            variant="outline"
+            onClick={finishRound}
+            disabled={finishingRound}
+            className="w-full border-success text-success hover:bg-success/10"
+          >
+            {finishingRound ? "Cerrando..." : "Terminar ronda"}
           </Button>
           {currentHole < totalHoles ? (
-            <Button size="lg" onClick={() => goToHole(currentHole + 1)}>
-              Siguiente <ArrowRight className="ml-1 h-4 w-4" />
+            <Button size="lg" onClick={() => goToHole(currentHole + 1)} className="w-full">
+              Sig. <ArrowRight className="ml-1 h-4 w-4" />
             </Button>
           ) : (
-            <Button size="lg" onClick={() => navigate(`/rondas/${roundId}`)}>
-              Ver resumen
+            <Button size="lg" onClick={() => navigate(`/rondas/${roundId}`)} className="w-full">
+              Lista hoyos
             </Button>
           )}
         </div>
@@ -434,10 +596,28 @@ const HoleCapture = () => {
   );
 };
 
-const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
+const Section = ({
+  title,
+  info,
+  children,
+}: {
+  title: string;
+  info?: MetricInfoContent;
+  children: React.ReactNode;
+}) => (
   <div className="space-y-2">
-    <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</h3>
+    <div className="flex items-center justify-between">
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</h3>
+      {info && <MetricInfoDialog content={info} className="-mr-1" />}
+    </div>
     {children}
+  </div>
+);
+
+const SgItem = ({ label, value }: { label: string; value: string }) => (
+  <div className="rounded-md border border-border bg-background px-2 py-1.5">
+    <p className="text-[11px] text-muted-foreground">{label}</p>
+    <p className="text-sm font-semibold">{value}</p>
   </div>
 );
 

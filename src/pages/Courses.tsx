@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Plus, ChevronRight, MapPin } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { FfIcon } from "@/components/FfIcon";
 
 interface Course {
   id: string;
@@ -89,7 +90,7 @@ const Courses = () => {
               autoFocus
             />
             <Button onClick={handleCreate}>Crear</Button>
-            <Button variant="ghost" onClick={() => setShowNew(false)}>✕</Button>
+            <Button variant="ghost" onClick={() => setShowNew(false)}><FfIcon name="x" /></Button>
           </div>
         )}
 

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft, Edit, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { FfIcon } from "@/components/FfIcon";
 
 interface RoundHole {
   hole_number: number;
@@ -52,6 +53,24 @@ const RoundDetail = () => {
     await supabase.from("rounds").delete().eq("id", roundId!);
     toast.success("Ronda eliminada");
     navigate("/rondas");
+  };
+
+  const finishRound = async () => {
+    if (!roundId) return;
+    if (!window.confirm("¿Seguro que quieres terminar y cerrar esta ronda?")) return;
+
+    const { error } = await supabase
+      .from("rounds")
+      .update({ status: "finished", finished_at: new Date().toISOString() })
+      .eq("id", roundId);
+
+    if (error) {
+      toast.error("No se pudo cerrar la ronda");
+      return;
+    }
+
+    setStatus("finished");
+    toast.success("Ronda cerrada");
   };
 
   return (
@@ -117,12 +136,12 @@ const RoundDetail = () => {
                 )}
               >
                 <span className="font-bold text-primary">{h.hole_number}</span>
-                <span className="text-[10px]">
-                  {h.mental_commitment === "perfecto" && "🟢"}
-                  {h.mental_commitment === "dude_en_1" && "🟡"}
-                  {h.mental_commitment === "perdi_el_foco" && "🔴"}
-                  {h.gir && " ✅"}
-                  {h.penalties > 0 && " ⚠️"}
+                <span className="flex items-center gap-1 text-[10px]">
+                  {h.mental_commitment === "perfecto" && <FfIcon name="cloud-check" className="text-success" />}
+                  {h.mental_commitment === "dude_en_1" && <FfIcon name="triangle-warning" className="text-warning" />}
+                  {h.mental_commitment === "perdi_el_foco" && <FfIcon name="cross-circle" className="text-destructive" />}
+                  {h.gir && <FfIcon name="flag-alt" className="text-success" />}
+                  {h.penalties > 0 && <FfIcon name="triangle-warning" className="text-tiger" />}
                 </span>
                 <span className="text-center text-muted-foreground">{h.hole_par}</span>
                 <span className={cn(
@@ -139,6 +158,16 @@ const RoundDetail = () => {
             );
           })}
         </div>
+        {status === "in_progress" && (
+          <Button
+            onClick={finishRound}
+            className="mt-4 w-full border-success text-success hover:bg-success/10"
+            variant="outline"
+            size="lg"
+          >
+            Terminar ronda
+          </Button>
+        )}
       </div>
     </AppLayout>
   );

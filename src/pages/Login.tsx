@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
+import { FfIcon } from "@/components/FfIcon";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -40,7 +41,7 @@ const Login = () => {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-primary px-6">
       <div className="mb-8 text-center">
-        <div className="mb-3 text-5xl">⛳</div>
+        <FfIcon name="flag-alt" className="mb-3 text-5xl text-primary-foreground" />
         <h1 className="text-3xl font-bold tracking-tight text-primary-foreground">Golf Tracker</h1>
         <p className="mt-1 text-sm text-primary-foreground/70">Método DECADE</p>
       </div>

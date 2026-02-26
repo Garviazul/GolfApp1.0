@@ -133,6 +133,7 @@ export type Database = {
       }
       round_holes: {
         Row: {
+          approach_lie: string | null
           approach_error_side: string | null
           approach_target: string | null
           approach_zone: string | null
@@ -152,10 +153,18 @@ export type Database = {
           score: number | null
           scrambling_attempt: boolean
           scrambling_success: boolean | null
+          sg_approach: number | null
+          sg_confidence: string
+          sg_model_version: string
+          sg_off_tee: number | null
+          sg_putting: number | null
+          sg_short_game: number | null
+          sg_total: number | null
           tee_club: string | null
           tee_result: string | null
         }
         Insert: {
+          approach_lie?: string | null
           approach_error_side?: string | null
           approach_target?: string | null
           approach_zone?: string | null
@@ -175,10 +184,18 @@ export type Database = {
           score?: number | null
           scrambling_attempt?: boolean
           scrambling_success?: boolean | null
+          sg_approach?: number | null
+          sg_confidence?: string
+          sg_model_version?: string
+          sg_off_tee?: number | null
+          sg_putting?: number | null
+          sg_short_game?: number | null
+          sg_total?: number | null
           tee_club?: string | null
           tee_result?: string | null
         }
         Update: {
+          approach_lie?: string | null
           approach_error_side?: string | null
           approach_target?: string | null
           approach_zone?: string | null
@@ -198,6 +215,13 @@ export type Database = {
           score?: number | null
           scrambling_attempt?: boolean
           scrambling_success?: boolean | null
+          sg_approach?: number | null
+          sg_confidence?: string
+          sg_model_version?: string
+          sg_off_tee?: number | null
+          sg_putting?: number | null
+          sg_short_game?: number | null
+          sg_total?: number | null
           tee_club?: string | null
           tee_result?: string | null
         }
