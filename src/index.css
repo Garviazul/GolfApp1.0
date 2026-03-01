@@ -126,12 +126,6 @@
     min-height: 100svh;
   }
 
-  @supports (height: 100dvh) {
-    .app-shell {
-      min-height: 100dvh;
-    }
-  }
-
   .safe-area-bottom {
     padding-bottom: env(safe-area-inset-bottom);
   }
