@@ -117,14 +117,15 @@ export const calculateStrokesGainedProxy = (input: StrokeGainedInput): StrokeGai
   const penaltyAdj = input.penalties > 0 ? -0.25 * input.penalties : 0;
   const total = components.length > 0 || penaltyAdj !== 0 ? round3(components.reduce((sum, value) => sum + value, 0) + penaltyAdj) : null;
 
+  const requiresApproachSignals = input.hole_par >= 4;
   const confidenceSignals = [
     input.score != null,
-    input.tee_result != null || input.hole_par === 3,
-    input.approach_zone != null,
+    input.tee_result != null,
+    !requiresApproachSignals || input.approach_zone != null,
     input.gir != null,
     input.putts != null,
     puttBucket != null,
-    input.approach_lie != null,
+    !requiresApproachSignals || input.approach_lie != null,
   ].filter(Boolean).length;
 
   let confidence: SgConfidence = "low";

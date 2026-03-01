@@ -53,10 +53,17 @@ const TEE_CLUBS = [
   { value: "hierro", label: "Hierro" },
 ];
 
-const TEE_RESULTS = [
+const TEE_RESULTS_PAR45 = [
   { value: "calle", label: "Calle", variant: "chip-success" as const },
   { value: "izquierda", label: "Izq", variant: "chip" as const },
   { value: "derecha", label: "Der", variant: "chip" as const },
+  { value: "penalidad", label: "Penal.", variant: "chip-destructive" as const },
+];
+
+const TEE_RESULTS_PAR3 = [
+  { value: "calle", label: "En green", variant: "chip-success" as const },
+  { value: "izquierda", label: "Fallo izq", variant: "chip" as const },
+  { value: "derecha", label: "Fallo der", variant: "chip" as const },
   { value: "penalidad", label: "Penal.", variant: "chip-destructive" as const },
 ];
 
@@ -73,7 +80,7 @@ const TIGER5_INFO: MetricInfoContent = {
   title: "Tiger 5",
   what: "Los 5 errores que más castigan el resultado. Se registran automáticamente por hoyo.",
   calculation:
-    "Se activa cuando hay: bogey en par 5, doble bogey o peor, 3 putts, bogey con approach de wedge o penalidad.",
+    "Se activa cuando hay: bogey en par 5, doble bogey o peor, 3 putts, no salvar un hoyo sin GIR y bogey tras approach corto (<135m).",
   target: "Reducirlos de forma sostenida durante bloques de 10-20 rondas.",
   improve: [
     "Evita dobles con decisiones conservadoras tras un golpe malo.",
@@ -212,18 +219,28 @@ const HoleCapture = () => {
 
   if (!hole) return <div className="flex app-shell items-center justify-center text-muted-foreground">Cargando...</div>;
 
-  const checklist = [
+  const isPar3 = hole.hole_par === 3;
+  const requiresApproach = hole.hole_par >= 4;
+  const teeResults = isPar3 ? TEE_RESULTS_PAR3 : TEE_RESULTS_PAR45;
+
+  const checklist: Array<{ label: string; done: boolean }> = [
     { label: "Score", done: hole.score != null },
     { label: "Mental", done: hole.mental_commitment != null },
-    { label: "Salida", done: hole.tee_result != null },
-    {
-      label: "Approach",
-      done: hole.approach_zone != null && hole.approach_lie != null && hole.approach_target != null && hole.approach_error_side != null,
-    },
+    { label: isPar3 ? "Salida (Par 3)" : "Salida", done: hole.tee_result != null },
     { label: "GIR/No GIR", done: hole.gir != null },
     { label: "Putts", done: hole.putts != null },
     { label: "Distancia 1er putt", done: hole.first_putt_bucket != null },
   ];
+  if (requiresApproach) {
+    checklist.splice(3, 0, {
+      label: "Approach",
+      done:
+        hole.approach_zone != null &&
+        hole.approach_lie != null &&
+        hole.approach_target != null &&
+        hole.approach_error_side != null,
+    });
+  }
   const checklistDone = checklist.filter((item) => item.done).length;
   const checklistPct = Math.round((checklistDone / checklist.length) * 100);
   const missingChecklist = checklist.filter((item) => !item.done).map((item) => item.label);
@@ -232,16 +249,17 @@ const HoleCapture = () => {
     hole_par: hole.hole_par,
     score: hole.score,
     putts: hole.putts,
+    gir: hole.gir,
+    scrambling_attempt: hole.scrambling_attempt,
+    scrambling_success: hole.scrambling_success,
     approach_zone: hole.approach_zone,
-    penalties: hole.penalties,
-    tee_result: hole.tee_result,
   });
   const tiger5Flags = [
     tiger5.bogeyPar5 ? "Bogey en par 5" : null,
     tiger5.doublePlus ? "Doble bogey o peor" : null,
     tiger5.threePutt ? "3 putts" : null,
-    tiger5.bogeyWithWedge ? "Bogey con wedge" : null,
-    tiger5.penalty ? "Penalidad" : null,
+    tiger5.blownEasySave ? "No salvó sin GIR" : null,
+    tiger5.bogeyShortIron ? "Bogey tras approach corto" : null,
   ].filter((flag): flag is string => Boolean(flag));
 
   const sgLive = calculateStrokesGainedProxy(hole);
@@ -355,8 +373,13 @@ const HoleCapture = () => {
         </Section>
 
         {/* Tee */}
-        <Section title="Salida">
+        <Section title={isPar3 ? "Salida (Par 3)" : "Salida"}>
           <div className="space-y-2">
+            {isPar3 && (
+              <p className="text-xs text-muted-foreground">
+                Registra el resultado del tiro de tee en el par 3.
+              </p>
+            )}
             <div className="flex gap-2">
               {TEE_CLUBS.map((c) => (
                 <Button key={c.value} variant="chip" size="chip-lg" data-active={hole.tee_club === c.value} onClick={() => update({ tee_club: c.value })} className="flex-1">
@@ -365,7 +388,7 @@ const HoleCapture = () => {
               ))}
             </div>
             <div className="flex gap-2">
-              {TEE_RESULTS.map((r) => (
+              {teeResults.map((r) => (
                 <Button key={r.value} variant={r.variant} size="chip-lg" data-active={hole.tee_result === r.value} onClick={() => update({ tee_result: r.value })} className="flex-1">
                   {r.label}
                 </Button>
@@ -375,48 +398,50 @@ const HoleCapture = () => {
         </Section>
 
         {/* Approach */}
-        <Section title="Approach">
-          <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">Zona (m)</p>
-            <div className="flex flex-wrap gap-2">
-              {APPROACH_ZONES.map((z) => (
-                <Button key={z} variant="chip" size="chip-lg" data-active={hole.approach_zone === z} onClick={() => update({ approach_zone: z })}>
-                  {z}
+        {requiresApproach && (
+          <Section title="Approach">
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">Zona (m)</p>
+              <div className="flex flex-wrap gap-2">
+                {APPROACH_ZONES.map((z) => (
+                  <Button key={z} variant="chip" size="chip-lg" data-active={hole.approach_zone === z} onClick={() => update({ approach_zone: z })}>
+                    {z}
+                  </Button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">Lie de approach</p>
+              <div className="flex flex-wrap gap-2">
+                {APPROACH_LIES.map((lie) => (
+                  <Button
+                    key={lie.value}
+                    variant="chip"
+                    size="chip-lg"
+                    data-active={hole.approach_lie === lie.value}
+                    onClick={() => update({ approach_lie: lie.value })}
+                  >
+                    {lie.label}
+                  </Button>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <Button variant="chip" size="chip-lg" data-active={hole.approach_target === "centro_green"} onClick={() => update({ approach_target: "centro_green" })} className="flex-1">
+                  <FfIcon name="bullseye-pointer" className="text-sm" /> Centro
                 </Button>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground">Lie de approach</p>
-            <div className="flex flex-wrap gap-2">
-              {APPROACH_LIES.map((lie) => (
-                <Button
-                  key={lie.value}
-                  variant="chip"
-                  size="chip-lg"
-                  data-active={hole.approach_lie === lie.value}
-                  onClick={() => update({ approach_lie: lie.value })}
-                >
-                  {lie.label}
+                <Button variant="chip" size="chip-lg" data-active={hole.approach_target === "bandera"} onClick={() => update({ approach_target: "bandera" })} className="flex-1">
+                  <FfIcon name="flag-alt" className="text-sm" /> Bandera
                 </Button>
-              ))}
+              </div>
+              <div className="flex gap-2">
+                <Button variant="chip-success" size="chip-lg" data-active={hole.approach_error_side === "lado_bueno"} onClick={() => update({ approach_error_side: "lado_bueno" })} className="flex-1">
+                  Lado Bueno
+                </Button>
+                <Button variant="chip-destructive" size="chip-lg" data-active={hole.approach_error_side === "lado_malo"} onClick={() => update({ approach_error_side: "lado_malo" })} className="flex-1">
+                  Lado Malo
+                </Button>
+              </div>
             </div>
-            <div className="flex gap-2">
-              <Button variant="chip" size="chip-lg" data-active={hole.approach_target === "centro_green"} onClick={() => update({ approach_target: "centro_green" })} className="flex-1">
-                <FfIcon name="bullseye-pointer" className="text-sm" /> Centro
-              </Button>
-              <Button variant="chip" size="chip-lg" data-active={hole.approach_target === "bandera"} onClick={() => update({ approach_target: "bandera" })} className="flex-1">
-                <FfIcon name="flag-alt" className="text-sm" /> Bandera
-              </Button>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="chip-success" size="chip-lg" data-active={hole.approach_error_side === "lado_bueno"} onClick={() => update({ approach_error_side: "lado_bueno" })} className="flex-1">
-                Lado Bueno
-              </Button>
-              <Button variant="chip-destructive" size="chip-lg" data-active={hole.approach_error_side === "lado_malo"} onClick={() => update({ approach_error_side: "lado_malo" })} className="flex-1">
-                Lado Malo
-              </Button>
-            </div>
-          </div>
-        </Section>
+          </Section>
+        )}
 
         {/* GIR */}
         <Section title="Green en Regulación">

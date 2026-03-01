@@ -35,6 +35,7 @@ interface RoundHoleRow {
   first_putt_bucket: string | null;
   penalties: number;
   tee_result: string | null;
+  scrambling_attempt: boolean;
   scrambling_success: boolean | null;
   sg_off_tee: number | null;
   sg_approach: number | null;
@@ -52,8 +53,8 @@ interface DashboardMetrics {
     bogeyPar5: number;
     doublePlus: number;
     threePutt: number;
-    bogeyWithWedge: number;
-    penalty: number;
+    blownEasySave: number;
+    bogeyShortIron: number;
   };
   mental: { perfecto: number; dude_en_1: number; perdi_el_foco: number };
   mentalPct: number | null;
@@ -95,7 +96,7 @@ const TIGER5_INFO: MetricInfoContent = {
   title: "Tiger 5",
   what: "Cuenta los 5 errores que más penalizan el resultado en jugadores competitivos.",
   calculation:
-    "Suma por hoyo: bogey en par 5, doble bogey o peor, 3 putts, bogey con approach de wedge y penalidades.",
+    "Suma por hoyo: bogey en par 5, doble bogey o peor, 3 putts, no salvar hoyos sin GIR y bogey tras approach corto (<135m).",
   target: "Sub-80: bajar tu media progresivamente y sostener tendencia descendente en bloques de 10-20 rondas.",
   improve: [
     "Prioriza estrategia de centro de green en situaciones de riesgo.",
@@ -160,8 +161,8 @@ const calculateMetrics = (holes: RoundHoleRow[]): DashboardMetrics => {
     bogeyPar5: tiger5.filter((row) => row.bogeyPar5).length,
     doublePlus: tiger5.filter((row) => row.doublePlus).length,
     threePutt: tiger5.filter((row) => row.threePutt).length,
-    bogeyWithWedge: tiger5.filter((row) => row.bogeyWithWedge).length,
-    penalty: tiger5.filter((row) => row.penalty).length,
+    blownEasySave: tiger5.filter((row) => row.blownEasySave).length,
+    bogeyShortIron: tiger5.filter((row) => row.bogeyShortIron).length,
   };
 
   const mental = { perfecto: 0, dude_en_1: 0, perdi_el_foco: 0 };
@@ -173,12 +174,14 @@ const calculateMetrics = (holes: RoundHoleRow[]): DashboardMetrics => {
   const mentalTotal = mental.perfecto + mental.dude_en_1 + mental.perdi_el_foco;
   const mentalPct = mentalTotal > 0 ? Math.round((mental.perfecto / mentalTotal) * 100) : null;
 
-  const withTarget = scoredHoles.filter((h) => h.approach_target != null);
+  const approachHoles = scoredHoles.filter((h) => h.hole_par >= 4);
+  const withTarget = approachHoles.filter((h) => h.approach_target != null);
   const banderaCount = withTarget.filter((h) => h.approach_target === "bandera").length;
   const centerTargetPct =
     withTarget.length > 0 ? Math.round(((withTarget.length - banderaCount) / withTarget.length) * 100) : null;
-  const ladoMalo = scoredHoles.filter((h) => h.approach_error_side === "lado_malo").length;
-  const withError = scoredHoles.filter((h) => h.approach_error_side != null).length;
+  const withErrorRows = approachHoles.filter((h) => h.approach_error_side != null);
+  const ladoMalo = withErrorRows.filter((h) => h.approach_error_side === "lado_malo").length;
+  const withError = withErrorRows.length;
 
   const girHoles = scoredHoles.filter((h) => h.gir != null);
   const girCount = girHoles.filter((h) => h.gir).length;
@@ -206,10 +209,11 @@ const calculateMetrics = (holes: RoundHoleRow[]): DashboardMetrics => {
     (h) =>
       h.mental_commitment != null &&
       h.tee_result != null &&
-      h.approach_zone != null &&
-      h.approach_lie != null &&
-      h.approach_target != null &&
-      h.approach_error_side != null &&
+      (h.hole_par === 3 ||
+        (h.approach_zone != null &&
+          h.approach_lie != null &&
+          h.approach_target != null &&
+          h.approach_error_side != null)) &&
       h.gir != null &&
       h.putts != null &&
       h.first_putt_bucket != null,
@@ -311,7 +315,7 @@ const Dashboard = () => {
       const { data: allHoles } = await supabase
         .from("round_holes")
         .select(
-          "round_id, hole_par, score, putts, mental_commitment, approach_zone, approach_lie, approach_target, approach_error_side, gir, gir_proximity_bucket, first_putt_bucket, penalties, tee_result, scrambling_success, sg_off_tee, sg_approach, sg_short_game, sg_putting, sg_total, sg_confidence, sg_model_version",
+          "round_id, hole_par, score, putts, mental_commitment, approach_zone, approach_lie, approach_target, approach_error_side, gir, gir_proximity_bucket, first_putt_bucket, penalties, tee_result, scrambling_attempt, scrambling_success, sg_off_tee, sg_approach, sg_short_game, sg_putting, sg_total, sg_confidence, sg_model_version",
         )
         .in("round_id", idsToFetch);
 
@@ -424,8 +428,8 @@ const Dashboard = () => {
             <span>Bogey en Par 5: {metrics.tiger5ByType.bogeyPar5}</span>
             <span>Doble+: {metrics.tiger5ByType.doublePlus}</span>
             <span>3-Putt: {metrics.tiger5ByType.threePutt}</span>
-            <span>Bogey c/Wedge: {metrics.tiger5ByType.bogeyWithWedge}</span>
-            <span>Penalidad: {metrics.tiger5ByType.penalty}</span>
+            <span>No salva sin GIR: {metrics.tiger5ByType.blownEasySave}</span>
+            <span>Bogey approach corto: {metrics.tiger5ByType.bogeyShortIron}</span>
           </div>
         </KPICard>
 
