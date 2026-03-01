@@ -20,14 +20,14 @@ const queryClient = new QueryClient();
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
-  if (loading) return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Cargando...</div>;
+  if (loading) return <div className="flex app-shell items-center justify-center text-muted-foreground">Cargando...</div>;
   if (!user) return <Navigate to="/login" replace />;
   return <>{children}</>;
 };
 
 const PublicRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
-  if (loading) return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Cargando...</div>;
+  if (loading) return <div className="flex app-shell items-center justify-center text-muted-foreground">Cargando...</div>;
   if (user) return <Navigate to="/" replace />;
   return <>{children}</>;
 };

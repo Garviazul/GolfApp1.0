@@ -210,7 +210,7 @@ const HoleCapture = () => {
     navigate(`/rondas/${roundId}`, { replace: true });
   };
 
-  if (!hole) return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Cargando...</div>;
+  if (!hole) return <div className="flex app-shell items-center justify-center text-muted-foreground">Cargando...</div>;
 
   const checklist = [
     { label: "Score", done: hole.score != null },
@@ -254,7 +254,7 @@ const HoleCapture = () => {
   const formatSg = (value: number | null) => (value == null ? "–" : `${value > 0 ? "+" : ""}${value.toFixed(2)}`);
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="app-shell bg-background">
       {/* Header */}
       <div className="sticky top-0 z-40 border-b border-border bg-card/95 backdrop-blur-md">
         <div className="mx-auto flex max-w-lg items-center justify-between px-4 py-3">
@@ -286,7 +286,7 @@ const HoleCapture = () => {
       </div>
 
       {/* Content */}
-      <div className="mx-auto max-w-lg space-y-5 px-4 py-4 pb-24">
+      <div className="mx-auto max-w-lg space-y-5 px-4 py-4 pb-[calc(6rem+env(safe-area-inset-bottom))]">
         <div className="rounded-xl border border-border bg-card p-3">
           <div className="flex items-center justify-between">
             <p className="text-sm font-semibold">Calidad de datos del hoyo</p>
@@ -561,7 +561,7 @@ const HoleCapture = () => {
       </div>
 
       {/* Bottom Nav */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card/95 backdrop-blur-md">
+      <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card/95 backdrop-blur-md safe-area-bottom">
         <div className="mx-auto grid max-w-lg grid-cols-3 gap-2 px-4 py-3">
           <Button
             variant="outline"

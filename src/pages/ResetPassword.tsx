@@ -37,7 +37,7 @@ const ResetPassword = () => {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-primary px-6">
+    <div className="flex app-shell flex-col items-center justify-center bg-primary px-6">
       <div className="w-full max-w-sm rounded-2xl bg-card p-6 shadow-xl">
         <h2 className="mb-4 text-lg font-bold">Nueva contraseña</h2>
         <form onSubmit={handleSubmit} className="space-y-4">

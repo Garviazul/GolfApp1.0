@@ -39,7 +39,7 @@ const Login = () => {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-primary px-6">
+    <div className="flex app-shell flex-col items-center justify-center bg-primary px-6">
       <div className="mb-8 text-center">
         <FfIcon name="flag-alt" className="mb-3 text-5xl text-primary-foreground" />
         <h1 className="text-3xl font-bold tracking-tight text-primary-foreground">Golf Tracker</h1>
