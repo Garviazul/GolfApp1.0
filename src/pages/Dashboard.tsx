@@ -35,6 +35,11 @@ interface RoundHoleRow {
   first_putt_bucket: string | null;
   penalties: number;
   tee_result: string | null;
+  tee_miss_detail: string | null;
+  second_shot_strategy: string | null;
+  second_shot_start_bucket: string | null;
+  second_shot_lie: string | null;
+  second_shot_result: string | null;
   scrambling_attempt: boolean;
   scrambling_success: boolean | null;
   sg_off_tee: number | null;
@@ -44,6 +49,30 @@ interface RoundHoleRow {
   sg_total: number | null;
   sg_confidence: string | null;
   sg_model_version: string | null;
+}
+
+interface ParGIRStat {
+  made: number;
+  total: number;
+  pct: number | null;
+}
+
+interface MissBreakdown {
+  tracked: number;
+  misses: number;
+  left: number;
+  right: number;
+  short: number;
+  long: number;
+  penalty: number;
+}
+
+interface Par5StrategyStat {
+  holes: number;
+  sgAvg: number | null;
+  gainPct: number | null;
+  losePct: number | null;
+  birdieOrBetterPct: number | null;
 }
 
 interface DashboardMetrics {
@@ -86,6 +115,21 @@ interface DashboardMetrics {
   sgShortGameAvg: number | null;
   sgPuttingAvg: number | null;
   sgHighConfidencePct: number | null;
+  girByPar: {
+    par3: ParGIRStat;
+    par4: ParGIRStat;
+    par5: ParGIRStat;
+  };
+  missesByPar: {
+    par3: MissBreakdown;
+    par4: MissBreakdown;
+    par5: MissBreakdown;
+  };
+  par5Strategy: {
+    tracked: number;
+    agresivo: Par5StrategyStat;
+    colocar: Par5StrategyStat;
+  };
 }
 
 type WindowSize = 5 | 10 | 20;
@@ -133,6 +177,72 @@ const SG_INFO: MetricInfoContent = {
 
 const formatPct = (value: number | null) => (value == null ? "–" : `${value}%`);
 const formatSg = (value: number | null) => (value == null ? "–" : `${value > 0 ? "+" : ""}${value.toFixed(2)}`);
+const formatPartOverTotal = (part: number, total: number) =>
+  total > 0 ? `${part}/${total} (${Math.round((part / total) * 100)}%)` : "0/0 (0%)";
+const calcPct = (part: number, total: number) => (total > 0 ? Math.round((part / total) * 100) : null);
+const avgNullable = (values: Array<number | null>) => {
+  const clean = values.filter((value): value is number => value != null);
+  if (clean.length === 0) return null;
+  return Number((clean.reduce((sum, value) => sum + value, 0) / clean.length).toFixed(3));
+};
+
+const buildParGirStat = (rows: RoundHoleRow[], par: 3 | 4 | 5): ParGIRStat => {
+  const tracked = rows.filter((h) => h.hole_par === par && h.gir != null);
+  const made = tracked.filter((h) => h.gir === true).length;
+  return { made, total: tracked.length, pct: calcPct(made, tracked.length) };
+};
+
+const buildMissBreakdown = (rows: RoundHoleRow[], par: 3 | 4 | 5): MissBreakdown => {
+  const tracked = rows.filter((h) => h.hole_par === par && h.gir != null);
+  const misses = tracked.filter((h) => h.gir === false);
+  const breakdown: MissBreakdown = {
+    tracked: tracked.length,
+    misses: misses.length,
+    left: 0,
+    right: 0,
+    short: 0,
+    long: 0,
+    penalty: 0,
+  };
+  misses.forEach((h) => {
+    if ((h.penalties ?? 0) > 0) {
+      breakdown.penalty += 1;
+    }
+    if (h.tee_miss_detail === "corto") {
+      breakdown.short += 1;
+      return;
+    }
+    if (h.tee_miss_detail === "largo") {
+      breakdown.long += 1;
+      return;
+    }
+    if (h.tee_miss_detail === "izquierda") {
+      breakdown.left += 1;
+      return;
+    }
+    if (h.tee_miss_detail === "derecha") {
+      breakdown.right += 1;
+    }
+  });
+  return breakdown;
+};
+
+const buildPar5StrategyStat = (rows: RoundHoleRow[], strategy: "agresivo_green" | "colocar"): Par5StrategyStat => {
+  const withStrategy = rows.filter((h) => h.hole_par === 5 && h.second_shot_strategy === strategy);
+  const sgTotals = withStrategy.map((h) => h.sg_total ?? calculateStrokesGainedProxy(h).total);
+  const sgAvg = avgNullable(sgTotals);
+  const sgValues = sgTotals.filter((value): value is number => value != null);
+  const gains = sgValues.filter((value) => value > 0).length;
+  const loses = sgValues.filter((value) => value < 0).length;
+  const birdieOrBetter = withStrategy.filter((h) => (h.score ?? 99) <= 4).length;
+  return {
+    holes: withStrategy.length,
+    sgAvg,
+    gainPct: calcPct(gains, sgValues.length),
+    losePct: calcPct(loses, sgValues.length),
+    birdieOrBetterPct: calcPct(birdieOrBetter, withStrategy.length),
+  };
+};
 
 const buildDelta = (
   current: number | null,
@@ -185,40 +295,51 @@ const calculateMetrics = (holes: RoundHoleRow[]): DashboardMetrics => {
 
   const girHoles = scoredHoles.filter((h) => h.gir != null);
   const girCount = girHoles.filter((h) => h.gir).length;
-  const girPct = girHoles.length > 0 ? Math.round((girCount / girHoles.length) * 100) : null;
+  const girPct = calcPct(girCount, girHoles.length);
+  const girByPar = {
+    par3: buildParGirStat(scoredHoles, 3),
+    par4: buildParGirStat(scoredHoles, 4),
+    par5: buildParGirStat(scoredHoles, 5),
+  };
 
   const puttHoles = scoredHoles.filter((h) => h.putts != null);
   const threePuttCount = puttHoles.filter((h) => (h.putts ?? 0) >= 3).length;
-  const threePuttPct = puttHoles.length > 0 ? Math.round((threePuttCount / puttHoles.length) * 100) : null;
+  const threePuttPct = calcPct(threePuttCount, puttHoles.length);
 
   const fairwayTracked = scoredHoles.filter((h) => h.hole_par >= 4 && h.tee_result != null);
   const fairways = fairwayTracked.filter((h) => h.tee_result === "calle").length;
-  const fairwayPct = fairwayTracked.length > 0 ? Math.round((fairways / fairwayTracked.length) * 100) : null;
+  const fairwayPct = calcPct(fairways, fairwayTracked.length);
+  const missesByPar = {
+    par3: buildMissBreakdown(scoredHoles, 3),
+    par4: buildMissBreakdown(scoredHoles, 4),
+    par5: buildMissBreakdown(scoredHoles, 5),
+  };
 
   const scramblingTracked = scoredHoles.filter((h) => h.gir === false && h.scrambling_success != null);
   const scramblingMade = scramblingTracked.filter((h) => h.scrambling_success === true).length;
-  const scramblingPct =
-    scramblingTracked.length > 0 ? Math.round((scramblingMade / scramblingTracked.length) * 100) : null;
+  const scramblingPct = calcPct(scramblingMade, scramblingTracked.length);
 
   const penaltiesTotal = scoredHoles.reduce((sum, h) => sum + (h.penalties ?? 0), 0);
   const penaltyHoles = scoredHoles.filter((h) => h.penalties > 0 || h.tee_result === "penalidad").length;
   const penaltiesPerHole = totalHoles > 0 ? Number((penaltiesTotal / totalHoles).toFixed(2)) : null;
-  const penaltyHolePct = totalHoles > 0 ? Math.round((penaltyHoles / totalHoles) * 100) : null;
+  const penaltyHolePct = calcPct(penaltyHoles, totalHoles);
 
   const completeHoles = scoredHoles.filter(
     (h) =>
       h.mental_commitment != null &&
-      h.tee_result != null &&
+      (h.hole_par === 3 || h.tee_result != null) &&
+      (h.hole_par !== 3 || h.approach_target != null) &&
+      (h.hole_par !== 5 || h.second_shot_strategy != null) &&
       (h.hole_par === 3 ||
         (h.approach_zone != null &&
           h.approach_lie != null &&
-          h.approach_target != null &&
-          h.approach_error_side != null)) &&
+          h.approach_target != null)) &&
       h.gir != null &&
+      (h.gir !== false || (h.tee_miss_detail != null && h.approach_error_side != null)) &&
       h.putts != null &&
       h.first_putt_bucket != null,
   ).length;
-  const completenessPct = totalHoles > 0 ? Math.round((completeHoles / totalHoles) * 100) : null;
+  const completenessPct = calcPct(completeHoles, totalHoles);
 
   const sgRows = scoredHoles.map((h) => {
     const estimated = calculateStrokesGainedProxy(h);
@@ -233,7 +354,12 @@ const calculateMetrics = (holes: RoundHoleRow[]): DashboardMetrics => {
   });
   const sgAgg = aggregateSg(sgRows);
   const sgHighConfidenceCount = sgRows.filter((row) => row.confidence === "high").length;
-  const sgHighConfidencePct = sgRows.length > 0 ? Math.round((sgHighConfidenceCount / sgRows.length) * 100) : null;
+  const sgHighConfidencePct = calcPct(sgHighConfidenceCount, sgRows.length);
+  const par5Strategy = {
+    tracked: scoredHoles.filter((h) => h.hole_par === 5 && h.second_shot_strategy != null).length,
+    agresivo: buildPar5StrategyStat(scoredHoles, "agresivo_green"),
+    colocar: buildPar5StrategyStat(scoredHoles, "colocar"),
+  };
 
   return {
     totalHoles,
@@ -269,6 +395,9 @@ const calculateMetrics = (holes: RoundHoleRow[]): DashboardMetrics => {
     sgShortGameAvg: sgAgg.shortGame,
     sgPuttingAvg: sgAgg.putting,
     sgHighConfidencePct,
+    girByPar,
+    missesByPar,
+    par5Strategy,
   };
 };
 
@@ -315,7 +444,7 @@ const Dashboard = () => {
       const { data: allHoles } = await supabase
         .from("round_holes")
         .select(
-          "round_id, hole_par, score, putts, mental_commitment, approach_zone, approach_lie, approach_target, approach_error_side, gir, gir_proximity_bucket, first_putt_bucket, penalties, tee_result, scrambling_attempt, scrambling_success, sg_off_tee, sg_approach, sg_short_game, sg_putting, sg_total, sg_confidence, sg_model_version",
+          "round_id, hole_par, score, putts, mental_commitment, approach_zone, approach_lie, approach_target, approach_error_side, gir, gir_proximity_bucket, first_putt_bucket, penalties, tee_result, tee_miss_detail, second_shot_strategy, second_shot_start_bucket, second_shot_lie, second_shot_result, scrambling_attempt, scrambling_success, sg_off_tee, sg_approach, sg_short_game, sg_putting, sg_total, sg_confidence, sg_model_version",
         )
         .in("round_id", idsToFetch);
 
@@ -355,6 +484,10 @@ const Dashboard = () => {
       }),
     [metrics, tigerPerRound],
   );
+  const totalMissesTracked =
+    metrics.missesByPar.par3.tracked + metrics.missesByPar.par4.tracked + metrics.missesByPar.par5.tracked;
+  const totalMisses =
+    metrics.missesByPar.par3.misses + metrics.missesByPar.par4.misses + metrics.missesByPar.par5.misses;
 
   if (loading) {
     return (
@@ -496,6 +629,81 @@ const Dashboard = () => {
           <p className="mt-2 text-xs text-muted-foreground">
             Confianza alta en el cálculo: {metrics.sgHighConfidencePct ?? 0}% de hoyos.
           </p>
+        </KPICard>
+
+        <KPICard
+          icon={<Flag className="h-5 w-5 text-success" />}
+          title="GIR por Tipo de Hoyo"
+          value={formatPct(metrics.girPct)}
+          subtitle={`Total ${metrics.girCount}/${metrics.girTotal}`}
+          comparison={buildDelta(metrics.girPct, previousMetrics.girPct)}
+        >
+          <div className="mt-2 space-y-1 text-xs">
+            <p>Par 3: {formatPartOverTotal(metrics.girByPar.par3.made, metrics.girByPar.par3.total)}</p>
+            <p>Par 4: {formatPartOverTotal(metrics.girByPar.par4.made, metrics.girByPar.par4.total)}</p>
+            <p>Par 5: {formatPartOverTotal(metrics.girByPar.par5.made, metrics.girByPar.par5.total)}</p>
+          </div>
+        </KPICard>
+
+        <KPICard
+          icon={<Target className="h-5 w-5 text-warning" />}
+          title="Fallos de Green por Par"
+          value={formatPartOverTotal(totalMisses, totalMissesTracked)}
+          subtitle="No GIR por tipo de hoyo"
+        >
+          <div className="mt-2 space-y-2 text-xs">
+            <div>
+              <p className="font-semibold">Par 3</p>
+              <p className="text-muted-foreground">
+                Fallos: {formatPartOverTotal(metrics.missesByPar.par3.misses, metrics.missesByPar.par3.tracked)} ·
+                Izq {metrics.missesByPar.par3.left} · Der {metrics.missesByPar.par3.right} ·
+                Corto {metrics.missesByPar.par3.short} · Largo {metrics.missesByPar.par3.long} ·
+                Penal {metrics.missesByPar.par3.penalty}
+              </p>
+            </div>
+            <div>
+              <p className="font-semibold">Par 4</p>
+              <p className="text-muted-foreground">
+                Fallos: {formatPartOverTotal(metrics.missesByPar.par4.misses, metrics.missesByPar.par4.tracked)} ·
+                Izq {metrics.missesByPar.par4.left} · Der {metrics.missesByPar.par4.right} ·
+                Corto {metrics.missesByPar.par4.short} · Largo {metrics.missesByPar.par4.long} ·
+                Penal {metrics.missesByPar.par4.penalty}
+              </p>
+            </div>
+            <div>
+              <p className="font-semibold">Par 5</p>
+              <p className="text-muted-foreground">
+                Fallos: {formatPartOverTotal(metrics.missesByPar.par5.misses, metrics.missesByPar.par5.tracked)} ·
+                Izq {metrics.missesByPar.par5.left} · Der {metrics.missesByPar.par5.right} ·
+                Corto {metrics.missesByPar.par5.short} · Largo {metrics.missesByPar.par5.long} ·
+                Penal {metrics.missesByPar.par5.penalty}
+              </p>
+            </div>
+          </div>
+        </KPICard>
+
+        <KPICard
+          icon={<Activity className="h-5 w-5 text-primary" />}
+          title="Par 5: Estrategia 2º Golpe"
+          value={metrics.par5Strategy.tracked.toString()}
+          subtitle="Hoyos par 5 con estrategia registrada"
+        >
+          <div className="mt-2 space-y-2 text-xs">
+            <div className="rounded-md border border-border bg-muted/40 p-2">
+              <p className="font-semibold">Agresivo a green ({metrics.par5Strategy.agresivo.holes})</p>
+              <p className="mt-1 text-muted-foreground">
+                SG promedio: {formatSg(metrics.par5Strategy.agresivo.sgAvg)} · Gana: {formatPct(metrics.par5Strategy.agresivo.gainPct)} ·
+                Pierde: {formatPct(metrics.par5Strategy.agresivo.losePct)} · Birdie+ {formatPct(metrics.par5Strategy.agresivo.birdieOrBetterPct)}
+              </p>
+            </div>
+            <div className="rounded-md border border-border bg-muted/40 p-2">
+              <p className="font-semibold">A colocar ({metrics.par5Strategy.colocar.holes})</p>
+              <p className="mt-1 text-muted-foreground">
+                SG promedio: {formatSg(metrics.par5Strategy.colocar.sgAvg)} · Gana: {formatPct(metrics.par5Strategy.colocar.gainPct)} ·
+                Pierde: {formatPct(metrics.par5Strategy.colocar.losePct)} · Birdie+ {formatPct(metrics.par5Strategy.colocar.birdieOrBetterPct)}
+              </p>
+            </div>
+          </div>
         </KPICard>
 
         <div className="grid grid-cols-2 gap-4">

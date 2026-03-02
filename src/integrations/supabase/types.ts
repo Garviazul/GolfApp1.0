@@ -133,6 +133,7 @@ export type Database = {
       }
       round_holes: {
         Row: {
+          approach_penalty_type: string | null
           approach_lie: string | null
           approach_error_side: string | null
           approach_target: string | null
@@ -151,6 +152,10 @@ export type Database = {
           putts: number | null
           round_id: string
           score: number | null
+          second_shot_lie: string | null
+          second_shot_result: string | null
+          second_shot_start_bucket: string | null
+          second_shot_strategy: string | null
           scrambling_attempt: boolean
           scrambling_success: boolean | null
           sg_approach: number | null
@@ -161,9 +166,11 @@ export type Database = {
           sg_short_game: number | null
           sg_total: number | null
           tee_club: string | null
+          tee_miss_detail: string | null
           tee_result: string | null
         }
         Insert: {
+          approach_penalty_type?: string | null
           approach_lie?: string | null
           approach_error_side?: string | null
           approach_target?: string | null
@@ -182,6 +189,10 @@ export type Database = {
           putts?: number | null
           round_id: string
           score?: number | null
+          second_shot_lie?: string | null
+          second_shot_result?: string | null
+          second_shot_start_bucket?: string | null
+          second_shot_strategy?: string | null
           scrambling_attempt?: boolean
           scrambling_success?: boolean | null
           sg_approach?: number | null
@@ -192,9 +203,11 @@ export type Database = {
           sg_short_game?: number | null
           sg_total?: number | null
           tee_club?: string | null
+          tee_miss_detail?: string | null
           tee_result?: string | null
         }
         Update: {
+          approach_penalty_type?: string | null
           approach_lie?: string | null
           approach_error_side?: string | null
           approach_target?: string | null
@@ -213,6 +226,10 @@ export type Database = {
           putts?: number | null
           round_id?: string
           score?: number | null
+          second_shot_lie?: string | null
+          second_shot_result?: string | null
+          second_shot_start_bucket?: string | null
+          second_shot_strategy?: string | null
           scrambling_attempt?: boolean
           scrambling_success?: boolean | null
           sg_approach?: number | null
@@ -223,6 +240,7 @@ export type Database = {
           sg_short_game?: number | null
           sg_total?: number | null
           tee_club?: string | null
+          tee_miss_detail?: string | null
           tee_result?: string | null
         }
         Relationships: [

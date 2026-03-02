@@ -20,6 +20,12 @@ interface HoleData {
   mental_commitment: string | null;
   tee_club: string | null;
   tee_result: string | null;
+  tee_miss_detail: string | null;
+  second_shot_strategy: string | null;
+  second_shot_start_bucket: string | null;
+  second_shot_lie: string | null;
+  second_shot_result: string | null;
+  approach_penalty_type: string | null;
   approach_zone: string | null;
   approach_lie: string | null;
   approach_target: string | null;
@@ -54,16 +60,9 @@ const TEE_CLUBS = [
 ];
 
 const TEE_RESULTS_PAR45 = [
-  { value: "calle", label: "Calle", variant: "chip-success" as const },
+  { value: "calle", label: "Centro", variant: "chip-success" as const },
   { value: "izquierda", label: "Izq", variant: "chip" as const },
   { value: "derecha", label: "Der", variant: "chip" as const },
-  { value: "penalidad", label: "Penal.", variant: "chip-destructive" as const },
-];
-
-const TEE_RESULTS_PAR3 = [
-  { value: "calle", label: "En green", variant: "chip-success" as const },
-  { value: "izquierda", label: "Fallo izq", variant: "chip" as const },
-  { value: "derecha", label: "Fallo der", variant: "chip" as const },
   { value: "penalidad", label: "Penal.", variant: "chip-destructive" as const },
 ];
 
@@ -74,7 +73,30 @@ const APPROACH_LIES = [
   { value: "bunker", label: "Bunker" },
   { value: "recovery", label: "Recovery" },
 ];
-const PROXIMITY_BUCKETS = ["<3m", "3-5m", "5-10m", ">10m"];
+const MISS_DIRECTIONS = [
+  { value: "izquierda", label: "Izquierda" },
+  { value: "derecha", label: "Derecha" },
+  { value: "corto", label: "Corto" },
+  { value: "largo", label: "Largo" },
+];
+const SECOND_SHOT_STRATEGIES = [
+  { value: "agresivo_green", label: "Agresivo a green" },
+  { value: "colocar", label: "A colocar" },
+];
+const SECOND_SHOT_START_BUCKETS = [">230", "200-230", "170-200", "140-170", "<140"];
+const SECOND_SHOT_RESULTS = [
+  { value: "green", label: "Green" },
+  { value: "fairway", label: "Fairway" },
+  { value: "rough", label: "Rough" },
+  { value: "bunker", label: "Bunker" },
+  { value: "recovery", label: "Recovery" },
+  { value: "penalidad", label: "Penal." },
+];
+const APPROACH_PENALTY_TYPES = [
+  { value: "agua", label: "Agua (+1)" },
+  { value: "fuera_limites", label: "Fuera de límites (+1)" },
+];
+const FIRST_PUTT_BUCKETS = ["<3m", "3-5m", "5-10m", ">10m"];
 
 const TIGER5_INFO: MetricInfoContent = {
   title: "Tiger 5",
@@ -157,17 +179,45 @@ const HoleCapture = () => {
   const update = async (fields: Partial<HoleData>) => {
     if (!hole) return;
 
-    // Auto-first putt logic
-    let extra: Partial<HoleData> = {};
-    if ("gir" in fields && fields.gir && fields.gir_proximity_bucket !== undefined) {
-      extra.first_putt_bucket = fields.gir_proximity_bucket;
-      extra.first_putt_overridden = false;
-    }
-    if ("gir_proximity_bucket" in fields && hole.gir && !hole.first_putt_overridden) {
-      extra.first_putt_bucket = fields.gir_proximity_bucket!;
+    const merged: HoleData = { ...hole, ...fields };
+    let auto: Partial<HoleData> = {};
+
+    if ("gir" in fields) {
+      if (fields.gir === true) {
+        auto.tee_miss_detail = null;
+        auto.approach_error_side = null;
+      } else if (fields.gir === false) {
+        auto.gir_proximity_bucket = null;
+      }
     }
 
-    const updated = { ...hole, ...fields, ...extra };
+    // Proximidad GIR se deriva de la distancia real del primer putt.
+    if ("first_putt_bucket" in fields && merged.gir === true) {
+      auto.gir_proximity_bucket = fields.first_putt_bucket ?? null;
+    } else if (merged.gir === true && merged.first_putt_bucket != null) {
+      auto.gir_proximity_bucket = merged.first_putt_bucket;
+    }
+
+    const mergedWithAuto: HoleData = { ...merged, ...auto } as HoleData;
+
+    // Up&Down/Scrambling se calcula automáticamente: No GIR + score <= par.
+    if (mergedWithAuto.gir === false && mergedWithAuto.score != null) {
+      auto.scrambling_attempt = true;
+      auto.scrambling_success = mergedWithAuto.score <= mergedWithAuto.hole_par;
+    } else if (mergedWithAuto.gir === true || mergedWithAuto.gir == null) {
+      auto.scrambling_attempt = false;
+      auto.scrambling_success = null;
+    }
+
+    // Penalidades automáticas por eventos marcados en salida, 2º golpe y approach.
+    const penaltyEvents = [
+      mergedWithAuto.tee_result === "penalidad",
+      mergedWithAuto.second_shot_result === "penalidad",
+      mergedWithAuto.approach_penalty_type != null,
+    ];
+    auto.penalties = penaltyEvents.filter(Boolean).length;
+
+    const updated = { ...mergedWithAuto, ...auto };
     const sg = calculateStrokesGainedProxy(updated);
     const updatedWithSg: HoleData = {
       ...updated,
@@ -220,14 +270,18 @@ const HoleCapture = () => {
   if (!hole) return <div className="flex app-shell items-center justify-center text-muted-foreground">Cargando...</div>;
 
   const isPar3 = hole.hole_par === 3;
+  const isPar5 = hole.hole_par === 5;
   const requiresApproach = hole.hole_par >= 4;
-  const teeResults = isPar3 ? TEE_RESULTS_PAR3 : TEE_RESULTS_PAR45;
+  const teeResults = TEE_RESULTS_PAR45;
 
   const checklist: Array<{ label: string; done: boolean }> = [
     { label: "Score", done: hole.score != null },
     { label: "Mental", done: hole.mental_commitment != null },
-    { label: isPar3 ? "Salida (Par 3)" : "Salida", done: hole.tee_result != null },
+    { label: "Salida", done: hole.tee_club != null },
+    { label: "Apuntado", done: isPar3 ? hole.approach_target != null : true },
     { label: "GIR/No GIR", done: hole.gir != null },
+    { label: "Dirección fallo", done: hole.gir !== false || hole.tee_miss_detail != null },
+    { label: "Lado bueno/malo", done: hole.gir !== false || hole.approach_error_side != null },
     { label: "Putts", done: hole.putts != null },
     { label: "Distancia 1er putt", done: hole.first_putt_bucket != null },
   ];
@@ -237,8 +291,13 @@ const HoleCapture = () => {
       done:
         hole.approach_zone != null &&
         hole.approach_lie != null &&
-        hole.approach_target != null &&
-        hole.approach_error_side != null,
+        hole.approach_target != null,
+    });
+  }
+  if (isPar5) {
+    checklist.splice(requiresApproach ? 4 : 3, 0, {
+      label: "2º golpe (Par 5)",
+      done: hole.second_shot_strategy != null,
     });
   }
   const checklistDone = checklist.filter((item) => item.done).length;
@@ -375,11 +434,6 @@ const HoleCapture = () => {
         {/* Tee */}
         <Section title={isPar3 ? "Salida (Par 3)" : "Salida"}>
           <div className="space-y-2">
-            {isPar3 && (
-              <p className="text-xs text-muted-foreground">
-                Registra el resultado del tiro de tee en el par 3.
-              </p>
-            )}
             <div className="flex gap-2">
               {TEE_CLUBS.map((c) => (
                 <Button key={c.value} variant="chip" size="chip-lg" data-active={hole.tee_club === c.value} onClick={() => update({ tee_club: c.value })} className="flex-1">
@@ -387,13 +441,39 @@ const HoleCapture = () => {
                 </Button>
               ))}
             </div>
-            <div className="flex gap-2">
-              {teeResults.map((r) => (
-                <Button key={r.value} variant={r.variant} size="chip-lg" data-active={hole.tee_result === r.value} onClick={() => update({ tee_result: r.value })} className="flex-1">
-                  {r.label}
-                </Button>
-              ))}
-            </div>
+            {isPar3 ? (
+              <>
+                <p className="text-xs text-muted-foreground">Apuntado</p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="chip"
+                    size="chip-lg"
+                    data-active={hole.approach_target === "centro_green"}
+                    onClick={() => update({ approach_target: "centro_green" })}
+                    className="flex-1"
+                  >
+                    <FfIcon name="bullseye-pointer" className="text-sm" /> Centro
+                  </Button>
+                  <Button
+                    variant="chip"
+                    size="chip-lg"
+                    data-active={hole.approach_target === "bandera"}
+                    onClick={() => update({ approach_target: "bandera" })}
+                    className="flex-1"
+                  >
+                    <FfIcon name="flag-alt" className="text-sm" /> Bandera
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <div className="flex gap-2">
+                {teeResults.map((r) => (
+                  <Button key={r.value} variant={r.variant} size="chip-lg" data-active={hole.tee_result === r.value} onClick={() => update({ tee_result: r.value })} className="flex-1">
+                    {r.label}
+                  </Button>
+                ))}
+              </div>
+            )}
           </div>
         </Section>
 
@@ -431,13 +511,95 @@ const HoleCapture = () => {
                   <FfIcon name="flag-alt" className="text-sm" /> Bandera
                 </Button>
               </div>
+              <p className="text-xs text-muted-foreground">Penalidad en approach</p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="chip"
+                  size="chip-lg"
+                  data-active={hole.approach_penalty_type == null}
+                  onClick={() => update({ approach_penalty_type: null })}
+                >
+                  Sin penalidad
+                </Button>
+                {APPROACH_PENALTY_TYPES.map((penalty) => (
+                  <Button
+                    key={penalty.value}
+                    variant="chip-destructive"
+                    size="chip-lg"
+                    data-active={hole.approach_penalty_type === penalty.value}
+                    onClick={() => update({ approach_penalty_type: penalty.value })}
+                  >
+                    {penalty.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          </Section>
+        )}
+
+        {/* Second Shot - Par 5 */}
+        {isPar5 && (
+          <Section title="Segundo golpe (Par 5)">
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">Estrategia</p>
               <div className="flex gap-2">
-                <Button variant="chip-success" size="chip-lg" data-active={hole.approach_error_side === "lado_bueno"} onClick={() => update({ approach_error_side: "lado_bueno" })} className="flex-1">
-                  Lado Bueno
-                </Button>
-                <Button variant="chip-destructive" size="chip-lg" data-active={hole.approach_error_side === "lado_malo"} onClick={() => update({ approach_error_side: "lado_malo" })} className="flex-1">
-                  Lado Malo
-                </Button>
+                {SECOND_SHOT_STRATEGIES.map((strategy) => (
+                  <Button
+                    key={strategy.value}
+                    variant="chip"
+                    size="chip-lg"
+                    data-active={hole.second_shot_strategy === strategy.value}
+                    onClick={() => update({ second_shot_strategy: strategy.value })}
+                    className="flex-1"
+                  >
+                    {strategy.label}
+                  </Button>
+                ))}
+              </div>
+
+              <p className="text-xs text-muted-foreground">Distancia al inicio del 2º golpe</p>
+              <div className="flex flex-wrap gap-2">
+                {SECOND_SHOT_START_BUCKETS.map((bucket) => (
+                  <Button
+                    key={bucket}
+                    variant="chip"
+                    size="chip-lg"
+                    data-active={hole.second_shot_start_bucket === bucket}
+                    onClick={() => update({ second_shot_start_bucket: bucket })}
+                  >
+                    {bucket}m
+                  </Button>
+                ))}
+              </div>
+
+              <p className="text-xs text-muted-foreground">Lie del 2º golpe</p>
+              <div className="flex flex-wrap gap-2">
+                {APPROACH_LIES.map((lie) => (
+                  <Button
+                    key={lie.value}
+                    variant="chip"
+                    size="chip-lg"
+                    data-active={hole.second_shot_lie === lie.value}
+                    onClick={() => update({ second_shot_lie: lie.value })}
+                  >
+                    {lie.label}
+                  </Button>
+                ))}
+              </div>
+
+              <p className="text-xs text-muted-foreground">Resultado del 2º golpe</p>
+              <div className="flex flex-wrap gap-2">
+                {SECOND_SHOT_RESULTS.map((result) => (
+                  <Button
+                    key={result.value}
+                    variant={result.value === "penalidad" ? "chip-destructive" : "chip"}
+                    size="chip-lg"
+                    data-active={hole.second_shot_result === result.value}
+                    onClick={() => update({ second_shot_result: result.value })}
+                  >
+                    {result.label}
+                  </Button>
+                ))}
               </div>
             </div>
           </Section>
@@ -451,7 +613,7 @@ const HoleCapture = () => {
                 variant="chip-success"
                 size="chip-lg"
                 data-active={hole.gir === true}
-                onClick={() => update({ gir: true, scrambling_attempt: false, scrambling_success: null })}
+                onClick={() => update({ gir: true, tee_result: isPar3 ? "calle" : hole.tee_result })}
                 className="flex-1"
               >
                 <FfIcon name="check-circle" className="text-sm" /> GIR
@@ -460,45 +622,35 @@ const HoleCapture = () => {
                 variant="chip-destructive"
                 size="chip-lg"
                 data-active={hole.gir === false}
-                onClick={() => update({ gir: false, gir_proximity_bucket: null })}
+                onClick={() => update({ gir: false })}
                 className="flex-1"
               >
                 <FfIcon name="cross-circle" className="text-sm" /> No GIR
               </Button>
             </div>
-            {hole.gir && (
-              <div className="animate-fade-in">
-                <p className="mb-1 text-xs text-muted-foreground">Proximidad al pin</p>
-                <div className="flex gap-2">
-                  {PROXIMITY_BUCKETS.map((b) => (
-                    <Button key={b} variant="chip" size="chip-lg" data-active={hole.gir_proximity_bucket === b} onClick={() => update({ gir_proximity_bucket: b })} className="flex-1">
-                      {b}
+            {hole.gir === false && (
+              <div className="animate-fade-in space-y-2">
+                <p className="text-xs text-muted-foreground">Dirección del fallo</p>
+                <div className="flex flex-wrap gap-2">
+                  {MISS_DIRECTIONS.map((direction) => (
+                    <Button
+                      key={direction.value}
+                      variant="chip"
+                      size="chip-lg"
+                      data-active={hole.tee_miss_detail === direction.value}
+                      onClick={() => update({ tee_miss_detail: direction.value })}
+                    >
+                      {direction.label}
                     </Button>
                   ))}
                 </div>
-              </div>
-            )}
-            {hole.gir === false && (
-              <div className="animate-fade-in space-y-2">
-                <p className="text-xs text-muted-foreground">Salvar el par</p>
+                <p className="text-xs text-muted-foreground">Lado del error</p>
                 <div className="flex gap-2">
-                  <Button
-                    variant="chip-success"
-                    size="chip-lg"
-                    data-active={hole.scrambling_attempt && hole.scrambling_success === true}
-                    onClick={() => update({ scrambling_attempt: true, scrambling_success: true })}
-                    className="flex-1"
-                  >
-                    Sí
+                  <Button variant="chip-success" size="chip-lg" data-active={hole.approach_error_side === "lado_bueno"} onClick={() => update({ approach_error_side: "lado_bueno" })} className="flex-1">
+                    Lado Bueno
                   </Button>
-                  <Button
-                    variant="chip-destructive"
-                    size="chip-lg"
-                    data-active={hole.scrambling_attempt && hole.scrambling_success === false}
-                    onClick={() => update({ scrambling_attempt: true, scrambling_success: false })}
-                    className="flex-1"
-                  >
-                    No
+                  <Button variant="chip-destructive" size="chip-lg" data-active={hole.approach_error_side === "lado_malo"} onClick={() => update({ approach_error_side: "lado_malo" })} className="flex-1">
+                    Lado Malo
                   </Button>
                 </div>
               </div>
@@ -527,7 +679,7 @@ const HoleCapture = () => {
         {/* 1st Putt Distance */}
         <Section title="Distancia 1er Putt">
           <div className="flex gap-2">
-            {PROXIMITY_BUCKETS.map((b) => (
+            {FIRST_PUTT_BUCKETS.map((b) => (
               <Button
                 key={b}
                 variant="chip"
@@ -537,20 +689,6 @@ const HoleCapture = () => {
                 className="flex-1"
               >
                 {b}
-              </Button>
-            ))}
-          </div>
-          {hole.gir && hole.gir_proximity_bucket && !hole.first_putt_overridden && (
-            <p className="mt-1 text-xs text-success">Auto: desde proximidad GIR</p>
-          )}
-        </Section>
-
-        {/* Penalties */}
-        <Section title="Penalidades">
-          <div className="flex gap-2">
-            {[0, 1, 2, 3].map((p) => (
-              <Button key={p} variant={p > 0 ? "chip-warning" : "chip"} size="chip-lg" data-active={hole.penalties === p} onClick={() => update({ penalties: p })} className="flex-1">
-                {p}
               </Button>
             ))}
           </div>

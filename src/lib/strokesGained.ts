@@ -120,7 +120,7 @@ export const calculateStrokesGainedProxy = (input: StrokeGainedInput): StrokeGai
   const requiresApproachSignals = input.hole_par >= 4;
   const confidenceSignals = [
     input.score != null,
-    input.tee_result != null,
+    input.tee_result != null || input.hole_par === 3,
     !requiresApproachSignals || input.approach_zone != null,
     input.gir != null,
     input.putts != null,
