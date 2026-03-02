@@ -292,19 +292,19 @@ const HoleCapture = () => {
     { label: "Putts", done: hole.putts != null },
     { label: "Distancia 1er putt", done: hole.first_putt_bucket != null },
   ];
-  if (requiresApproach) {
+  if (isPar5) {
     checklist.splice(3, 0, {
+      label: "2º golpe (Par 5)",
+      done: hole.second_shot_strategy != null,
+    });
+  }
+  if (requiresApproach) {
+    checklist.splice(isPar5 ? 4 : 3, 0, {
       label: "Approach",
       done:
         hole.approach_zone != null &&
         hole.approach_lie != null &&
         hole.approach_target != null,
-    });
-  }
-  if (isPar5) {
-    checklist.splice(requiresApproach ? 4 : 3, 0, {
-      label: "2º golpe (Par 5)",
-      done: hole.second_shot_strategy != null,
     });
   }
   const checklistDone = checklist.filter((item) => item.done).length;
@@ -484,66 +484,6 @@ const HoleCapture = () => {
           </div>
         </Section>
 
-        {/* Approach */}
-        {requiresApproach && (
-          <Section title="Approach">
-            <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">Zona (m)</p>
-              <div className="flex flex-wrap gap-2">
-                {APPROACH_ZONES.map((z) => (
-                  <Button key={z} variant="chip" size="chip-lg" data-active={hole.approach_zone === z} onClick={() => update({ approach_zone: z })}>
-                    {z}
-                  </Button>
-                ))}
-              </div>
-              <p className="text-xs text-muted-foreground">Lie de approach</p>
-              <div className="flex flex-wrap gap-2">
-                {APPROACH_LIES.map((lie) => (
-                  <Button
-                    key={lie.value}
-                    variant="chip"
-                    size="chip-lg"
-                    data-active={hole.approach_lie === lie.value}
-                    onClick={() => update({ approach_lie: lie.value })}
-                  >
-                    {lie.label}
-                  </Button>
-                ))}
-              </div>
-              <div className="flex gap-2">
-                <Button variant="chip" size="chip-lg" data-active={hole.approach_target === "centro_green"} onClick={() => update({ approach_target: "centro_green" })} className="flex-1">
-                  <FfIcon name="bullseye-pointer" className="text-sm" /> Centro
-                </Button>
-                <Button variant="chip" size="chip-lg" data-active={hole.approach_target === "bandera"} onClick={() => update({ approach_target: "bandera" })} className="flex-1">
-                  <FfIcon name="flag-alt" className="text-sm" /> Bandera
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground">Penalidad en approach</p>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant="chip"
-                  size="chip-lg"
-                  data-active={hole.approach_penalty_type == null}
-                  onClick={() => update({ approach_penalty_type: null })}
-                >
-                  Sin penalidad
-                </Button>
-                {APPROACH_PENALTY_TYPES.map((penalty) => (
-                  <Button
-                    key={penalty.value}
-                    variant="chip-destructive"
-                    size="chip-lg"
-                    data-active={hole.approach_penalty_type === penalty.value}
-                    onClick={() => update({ approach_penalty_type: penalty.value })}
-                  >
-                    {penalty.label}
-                  </Button>
-                ))}
-              </div>
-            </div>
-          </Section>
-        )}
-
         {/* Second Shot - Par 5 */}
         {isPar5 && (
           <Section title="Segundo golpe (Par 5)">
@@ -605,6 +545,66 @@ const HoleCapture = () => {
                     onClick={() => update({ second_shot_result: result.value })}
                   >
                     {result.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          </Section>
+        )}
+
+        {/* Approach */}
+        {requiresApproach && (
+          <Section title="Approach">
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">Zona (m)</p>
+              <div className="flex flex-wrap gap-2">
+                {APPROACH_ZONES.map((z) => (
+                  <Button key={z} variant="chip" size="chip-lg" data-active={hole.approach_zone === z} onClick={() => update({ approach_zone: z })}>
+                    {z}
+                  </Button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">Lie de approach</p>
+              <div className="flex flex-wrap gap-2">
+                {APPROACH_LIES.map((lie) => (
+                  <Button
+                    key={lie.value}
+                    variant="chip"
+                    size="chip-lg"
+                    data-active={hole.approach_lie === lie.value}
+                    onClick={() => update({ approach_lie: lie.value })}
+                  >
+                    {lie.label}
+                  </Button>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <Button variant="chip" size="chip-lg" data-active={hole.approach_target === "centro_green"} onClick={() => update({ approach_target: "centro_green" })} className="flex-1">
+                  <FfIcon name="bullseye-pointer" className="text-sm" /> Centro
+                </Button>
+                <Button variant="chip" size="chip-lg" data-active={hole.approach_target === "bandera"} onClick={() => update({ approach_target: "bandera" })} className="flex-1">
+                  <FfIcon name="flag-alt" className="text-sm" /> Bandera
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">Penalidad en approach</p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="chip"
+                  size="chip-lg"
+                  data-active={hole.approach_penalty_type == null}
+                  onClick={() => update({ approach_penalty_type: null })}
+                >
+                  Sin penalidad
+                </Button>
+                {APPROACH_PENALTY_TYPES.map((penalty) => (
+                  <Button
+                    key={penalty.value}
+                    variant="chip-destructive"
+                    size="chip-lg"
+                    data-active={hole.approach_penalty_type === penalty.value}
+                    onClick={() => update({ approach_penalty_type: penalty.value })}
+                  >
+                    {penalty.label}
                   </Button>
                 ))}
               </div>
