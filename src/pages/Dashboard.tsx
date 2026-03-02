@@ -151,14 +151,14 @@ const TIGER5_INFO: MetricInfoContent = {
 
 const MENTAL_INFO: MetricInfoContent = {
   title: "Mental Score",
-  what: "Mide tu disciplina mental en cada hoyo según calidad de rutina y compromiso de golpe.",
+  what: "Mide tu disciplina mental hoyo a hoyo a partir de la etiqueta de rutina y enfoque.",
   calculation:
-    "Porcentaje de hoyos con 'Rutina perfecta' sobre hoyos con registro mental (perfecto, dudé en 1, perdí el enfoque).",
+    "Etiquetas: Rutina perfecta (objetivo y compromiso claro), Dudé en 1 golpe (duda puntual), Perdí el enfoque (dos o más decisiones/golpes sin compromiso). El KPI es % de hoyos en Rutina perfecta sobre hoyos con registro.",
   target: "Sub-80: mantener un porcentaje alto y estable, minimizando episodios rojos en tramos clave de la vuelta.",
   improve: [
     "Estandariza una rutina pre-golpe corta y repetible.",
-    "Si dudas, reinicia el proceso antes de ejecutar.",
-    "Evalúa foco por bloques de 3 hoyos para corregir durante la ronda.",
+    "Si dudas, reinicia: respiración, objetivo y compromiso antes de ejecutar.",
+    "Registra la etiqueta al terminar cada hoyo para reducir sesgo por resultado.",
   ],
 };
 

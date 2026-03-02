@@ -112,15 +112,15 @@ const TIGER5_INFO: MetricInfoContent = {
 };
 
 const MENTAL_INFO: MetricInfoContent = {
-  title: "Mental Score",
-  what: "Mide tu compromiso con la rutina mental en cada hoyo.",
+  title: "Rutina y enfoque",
+  what: "Etiqueta la calidad mental del hoyo completo, no la calidad técnica del golpe.",
   calculation:
-    "Cada hoyo se etiqueta como rutina perfecta, duda puntual o pérdida de foco. El dashboard usa estos registros para el porcentaje.",
-  target: "Mantener la mayoría de hoyos en rutina perfecta.",
+    "Rutina perfecta: objetivo claro y compromiso total durante el hoyo. Dudé en 1 golpe: hubo una duda puntual antes de ejecutar. Perdí el enfoque: dos o más decisiones/golpes sin compromiso claro.",
+  target: "Registrar rápido y consistente: objetivo de mayoría en rutina perfecta y reducción de episodios de duda.",
   improve: [
-    "Mismo patrón pre-golpe para todos los palos.",
-    "Si dudas, reinicia visualización y respiración.",
-    "Evalúa cada 3 hoyos para corregir durante la ronda.",
+    "Usa el mismo patrón pre-golpe en salida, approach y putts clave.",
+    "Si aparece duda, reinicia: respiración, objetivo, swing de práctica y ejecutar.",
+    "Márcalo al cerrar cada hoyo para evitar sesgo por el resultado final.",
   ],
 };
 
@@ -175,6 +175,13 @@ const HoleCapture = () => {
     fetchRoundMeta();
     fetchRegisteredHoles();
   }, [fetchHole, fetchRoundMeta, fetchRegisteredHoles]);
+
+  useEffect(() => {
+    const frameId = window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    });
+    return () => window.cancelAnimationFrame(frameId);
+  }, [currentHole]);
 
   const update = async (fields: Partial<HoleData>) => {
     if (!hole) return;
@@ -414,7 +421,7 @@ const HoleCapture = () => {
 
         {/* Mental */}
         <Section title="Rutina y enfoque" info={MENTAL_INFO}>
-          <div className="flex gap-2">
+          <div className="grid grid-cols-3 gap-2">
             {MENTAL.map((m) => (
               <Button
                 key={m.value}
@@ -422,10 +429,10 @@ const HoleCapture = () => {
                 size="chip-lg"
                 data-active={hole.mental_commitment === m.value}
                 onClick={() => update({ mental_commitment: m.value })}
-                className="flex-1"
+                className="h-auto min-h-11 flex-col gap-1 whitespace-normal px-2 py-2 text-center leading-tight"
               >
                 <FfIcon name={m.icon} className={cn("text-sm", m.iconClass)} />
-                <span>{m.label}</span>
+                <span className="text-[11px] sm:text-xs">{m.label}</span>
               </Button>
             ))}
           </div>
